@@ -1,0 +1,1 @@
+# strateji2
