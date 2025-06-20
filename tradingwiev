@@ -1,0 +1,78 @@
+//@version=6
+indicator(title = 'ATR with Super Trend and Filtering', overlay = true)
+
+// Inputs
+a = input(1, title = 'Key Value. \'This changes the sensitivity\'')
+c = input(10, title = 'ATR Period')
+h = input(false, title = 'Signals from Heikin Ashi Candles')
+factor = input(1.5, title = 'Multiplier for Super Trend')
+minTimeBetweenTrades = input(60, title = 'Minimum time (in minutes) between trades') // Minimum time between trades
+
+// ATR calculations
+xATR = ta.atr(c)
+nLoss = a * xATR
+
+src = h ? request.security(ticker.heikinashi(syminfo.tickerid), timeframe.period, close, lookahead = barmerge.lookahead_off) : close
+
+// Trailing Stop calculations
+var float xATRTrailingStop = na
+
+xATRTrailingStop := na(xATRTrailingStop[1]) ? 0.0 : src > nz(xATRTrailingStop[1], 0) and src[1] > nz(xATRTrailingStop[1], 0) ? math.max(nz(xATRTrailingStop[1]), src - nLoss) : src < nz(xATRTrailingStop[1], 0) and src[1] < nz(xATRTrailingStop[1], 0) ? math.min(nz(xATRTrailingStop[1]), src + nLoss) : src > nz(xATRTrailingStop[1], 0) ? src - nLoss : src + nLoss
+
+pos = 0
+pos := src[1] < nz(xATRTrailingStop[1], 0) and src > nz(xATRTrailingStop[1], 0) ? 1 : src[1] > nz(xATRTrailingStop[1], 0) and src < nz(xATRTrailingStop[1], 0) ? -1 : nz(pos[1], 0)
+
+xcolor = pos == -1 ? color.red : pos == 1 ? color.green : color.blue
+
+ema = ta.ema(src, 1)
+above = ta.crossover(ema, xATRTrailingStop)
+below = ta.crossover(xATRTrailingStop, ema)
+
+buy = src > xATRTrailingStop and above
+sell = src < xATRTrailingStop and below
+
+// Time filtering logic
+var float lastTradeTime = na
+currentTradeTime = time
+tradeDelay = not na(lastTradeTime) and (currentTradeTime - lastTradeTime) / 60000 < minTimeBetweenTrades
+
+// Modify buy and sell conditions
+buyFiltered = buy and not tradeDelay
+sellFiltered = sell and not tradeDelay
+
+// Update last trade time
+if buyFiltered or sellFiltered
+    lastTradeTime := currentTradeTime
+    lastTradeTime
+
+barbuy = src > xATRTrailingStop
+barsell = src < xATRTrailingStop
+
+plotshape(buyFiltered, title = 'Buy', text = 'Buy', style = shape.labelup, location = location.belowbar, color = color.new(color.green, 0), textcolor = color.new(color.white, 0), size = size.tiny)
+plotshape(sellFiltered, title = 'Sell', text = 'Sell', style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), textcolor = color.new(color.white, 0), size = size.tiny)
+
+barcolor(barbuy ? color.green : na)
+barcolor(barsell ? color.red : na)
+
+alertcondition(buyFiltered, 'Long', 'Long')
+alertcondition(sellFiltered, 'Short', 'Short')
+
+// Super Trend calculations
+superTrend = xATR * factor
+trendUp = hl2 - superTrend
+trendDown = hl2 + superTrend
+
+var float superTrendLine = na
+superTrendLine := na(superTrendLine[1]) ? na : close > superTrendLine[1] ? math.max(trendUp, superTrendLine[1]) : math.min(trendDown, superTrendLine[1])
+
+superTrendLine := na(superTrendLine) ? na : close > superTrendLine ? trendDown : trendUp
+
+plot(superTrendLine, color = color.new(color.blue, 0), linewidth = 2)
+
+// Super Trend Alerts
+buySuperTrend = ta.crossover(close, superTrendLine)
+sellSuperTrend = ta.crossunder(close, superTrendLine)
+
+alertcondition(buySuperTrend, title = 'Buy Super Trend', message = 'Buy Signal from Super Trend')
+alertcondition(sellSuperTrend, title = 'Sell Super Trend', message = 'Sell Signal from Super Trend')
+
