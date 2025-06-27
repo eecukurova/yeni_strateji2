@@ -1,0 +1,245 @@
+//@version=5
+strategy("Eralp Strategy 2", overlay=true, margin_long=100, margin_short=100, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// ============================================================================
+// CONFIGURATION PARAMETERS
+// ============================================================================
+
+// PSAR Parameters
+psar_start = input.float(2.0, "PSAR Start", minval=0.1, maxval=10.0, step=0.1)
+psar_increment = input.float(2.0, "PSAR Increment", minval=0.1, maxval=10.0, step=0.1)
+psar_maximum = input.float(2.0, "PSAR Maximum", minval=0.1, maxval=10.0, step=0.1)
+
+// ATR Zone Parameters
+zone_length = input.int(10, "ATR Zone Length", minval=5, maxval=50)
+zone_multiplier = input.float(3.0, "ATR Zone Multiplier", minval=1.0, maxval=10.0, step=0.1)
+
+// Donchian Channel Parameters
+donchian_length = input.int(20, "Donchian Channel Length", minval=10, maxval=100)
+
+// EMA Parameters
+ema_lower_period = input.int(9, "Lower EMA Period", minval=5, maxval=50)
+ema_medium_period = input.int(27, "Medium EMA Period", minval=10, maxval=100)
+hma_long_period = input.int(200, "Long HMA Period", minval=50, maxval=500)
+
+// Trend EMA Parameters
+ema_trend_short = input.int(50, "Trend EMA Short", minval=20, maxval=100)
+ema_trend_long = input.int(200, "Trend EMA Long", minval=100, maxval=500)
+
+// ATR and RSI Parameters
+atr_length = input.int(14, "ATR Length", minval=5, maxval=50)
+rsi_length = input.int(14, "RSI Length", minval=5, maxval=50)
+
+// Market Condition Filters
+min_atr = input.float(10.0, "Minimum ATR", minval=1.0, maxval=100.0, step=0.1)
+max_atr = input.float(50.0, "Maximum ATR", minval=10.0, maxval=200.0, step=0.1)
+
+// Trade Parameters
+take_profit_percent = input.float(0.5, "Take Profit %", minval=0.1, maxval=10.0, step=0.1) / 100
+stop_loss_percent = input.float(2.0, "Stop Loss %", minval=0.5, maxval=20.0, step=0.1) / 100
+
+// ============================================================================
+// INDICATOR CALCULATIONS
+// ============================================================================
+
+// PSAR Calculation
+psar = ta.sar(psar_start / 100, psar_increment / 100, psar_maximum / 10)
+psar_trend = psar < close ? 1 : -1
+
+// ATR Calculation
+atr = ta.atr(atr_length)
+
+// RSI Calculation
+rsi = ta.rsi(close, rsi_length)
+
+// EMA Calculations
+ema_lower = ta.ema(close, ema_lower_period)
+ema_medium = ta.ema(close, ema_medium_period)
+ema_50 = ta.ema(close, ema_trend_short)
+ema_200 = ta.ema(close, ema_trend_long)
+
+// HMA Calculation (Hull Moving Average)
+hma_long = ta.hma(close, hma_long_period)
+
+// Donchian Channel
+upper_donchian = ta.highest(high, donchian_length)
+lower_donchian = ta.lowest(low, donchian_length)
+middle_donchian = (upper_donchian + lower_donchian) / 2
+
+// ============================================================================
+// ATR ZONE CALCULATIONS
+// ============================================================================
+
+// HL2 (High + Low) / 2
+hl2 = (high + low) / 2
+
+// ATR Zone calculation
+down_zone = hl2 + (atr * zone_multiplier)
+up_zone = hl2 - (atr * zone_multiplier)
+
+// Zone persistence logic
+var float prev_down_zone = na
+var float prev_up_zone = na
+var float final_down_zone = na
+var float final_up_zone = na
+
+if na(prev_down_zone)
+    final_down_zone := down_zone
+    final_up_zone := up_zone
+else
+    if close[1] < prev_down_zone
+        final_down_zone := math.min(down_zone, prev_down_zone)
+    else
+        final_down_zone := down_zone
+    
+    if close[1] > prev_up_zone
+        final_up_zone := math.max(up_zone, prev_up_zone)
+    else
+        final_up_zone := up_zone
+
+prev_down_zone := final_down_zone
+prev_up_zone := final_up_zone
+
+// Zone Decider
+var int zone_decider = 1
+
+if zone_decider[1] == -1 and close > final_down_zone
+    zone_decider := 1
+else if zone_decider[1] == 1 and close < final_up_zone
+    zone_decider := -1
+else
+    zone_decider := zone_decider[1]
+
+// ============================================================================
+// SIGNAL GENERATION
+// ============================================================================
+
+// Buy Signal: Zone decider changes from -1 to 1 AND close above middle donchian
+buy_signal = zone_decider == 1 and zone_decider[1] == -1 and close > middle_donchian
+
+// Sell Signal: Zone decider changes from 1 to -1 AND close below middle donchian
+sell_signal = zone_decider == -1 and zone_decider[1] == 1 and close < middle_donchian
+
+// ============================================================================
+// MARKET CONDITION FILTERS
+// ============================================================================
+
+// ATR Volatility Filter
+atr_ok = atr > min_atr and atr < max_atr
+
+// Trend Filter (EMA 50 > EMA 200)
+trend_ok = ema_50 > ema_200
+
+// Market conditions combined
+market_conditions_ok = atr_ok and trend_ok
+
+// ============================================================================
+// BAR COLOR CONDITIONS
+// ============================================================================
+
+// Close position relative to EMAs
+is_close_above = close > ema_lower and close > hma_long
+is_close_below = close < ema_lower and close < hma_long
+is_close_between = (close > ema_lower and close < hma_long) or (close < ema_lower and close > hma_long)
+is_neutral = (close > psar and is_close_below) or (close < psar and is_close_above)
+
+// ============================================================================
+// FINAL TRADE CONDITIONS
+// ============================================================================
+
+// Final buy/sell conditions with market filters
+can_trade = market_conditions_ok
+buy_condition = buy_signal and can_trade
+sell_condition = sell_signal and can_trade
+
+// ============================================================================
+// STRATEGY EXECUTION
+// ============================================================================
+
+// Entry conditions
+if buy_condition
+    strategy.entry("Long", strategy.long)
+    strategy.exit("Long TP/SL", "Long", 
+                 limit=close * (1 + take_profit_percent), 
+                 stop=close * (1 - stop_loss_percent))
+
+if sell_condition
+    strategy.entry("Short", strategy.short)
+    strategy.exit("Short TP/SL", "Short", 
+                 limit=close * (1 - take_profit_percent), 
+                 stop=close * (1 + stop_loss_percent))
+
+// ============================================================================
+// PLOTTING
+// ============================================================================
+
+// Plot PSAR
+plot(psar, "PSAR", color=psar_trend == 1 ? color.green : color.red, style=plot.style_cross, linewidth=2)
+
+// Plot EMAs
+plot(ema_lower, "EMA Lower", color=color.blue, linewidth=1)
+plot(ema_medium, "EMA Medium", color=color.orange, linewidth=1)
+plot(ema_50, "EMA 50", color=color.purple, linewidth=1)
+plot(ema_200, "EMA 200", color=color.red, linewidth=2)
+plot(hma_long, "HMA Long", color=color.yellow, linewidth=1)
+
+// Plot Donchian Channels
+plot(upper_donchian, "Upper Donchian", color=color.gray, linewidth=1)
+plot(lower_donchian, "Lower Donchian", color=color.gray, linewidth=1)
+plot(middle_donchian, "Middle Donchian", color=color.gray, linewidth=2)
+
+// Plot ATR Zones
+plot(final_up_zone, "Up Zone", color=color.green, linewidth=1, style=plot.style_line)
+plot(final_down_zone, "Down Zone", color=color.red, linewidth=1, style=plot.style_line)
+
+// Plot signals
+plotshape(buy_condition, "Buy Signal", shape.triangleup, location.belowbar, color.green, size=size.small)
+plotshape(sell_condition, "Sell Signal", shape.triangledown, location.abovebar, color.red, size=size.small)
+
+// ============================================================================
+// BACKGROUND COLORING
+// ============================================================================
+
+// Background colors based on zone decider
+bgcolor(zone_decider == 1 ? color.new(color.green, 95) : color.new(color.red, 95))
+
+// ============================================================================
+// TABLE DISPLAY
+// ============================================================================
+
+// Create info table
+var table info_table = table.new(position.top_right, 2, 8, bgcolor=color.white, border_width=1)
+
+if barstate.islast
+    table.cell(info_table, 0, 0, "Indicator", text_color=color.black, bgcolor=color.gray)
+    table.cell(info_table, 1, 0, "Value", text_color=color.black, bgcolor=color.gray)
+    
+    table.cell(info_table, 0, 1, "Zone Decider", text_color=color.black)
+    table.cell(info_table, 1, 1, str.tostring(zone_decider), text_color=zone_decider == 1 ? color.green : color.red)
+    
+    table.cell(info_table, 0, 2, "ATR", text_color=color.black)
+    table.cell(info_table, 1, 2, str.tostring(math.round(atr, 2)), text_color=color.black)
+    
+    table.cell(info_table, 0, 3, "RSI", text_color=color.black)
+    table.cell(info_table, 1, 3, str.tostring(math.round(rsi, 1)), text_color=color.black)
+    
+    table.cell(info_table, 0, 4, "Market OK", text_color=color.black)
+    table.cell(info_table, 1, 4, market_conditions_ok ? "YES" : "NO", text_color=market_conditions_ok ? color.green : color.red)
+    
+    table.cell(info_table, 0, 5, "Trend OK", text_color=color.black)
+    table.cell(info_table, 1, 5, trend_ok ? "YES" : "NO", text_color=trend_ok ? color.green : color.red)
+    
+    table.cell(info_table, 0, 6, "ATR OK", text_color=color.black)
+    table.cell(info_table, 1, 6, atr_ok ? "YES" : "NO", text_color=atr_ok ? color.green : color.red)
+    
+    table.cell(info_table, 0, 7, "Can Trade", text_color=color.black)
+    table.cell(info_table, 1, 7, can_trade ? "YES" : "NO", text_color=can_trade ? color.green : color.red)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+// Alert conditions
+alertcondition(buy_condition, "Buy Signal", "Eralp Strategy 2 - BUY Signal")
+alertcondition(sell_condition, "Sell Signal", "Eralp Strategy 2 - SELL Signal")
+alertcondition(zone_decider != zone_decider[1], "Zone Change", "Zone Decider changed to " + str.tostring(zone_decider)) 
