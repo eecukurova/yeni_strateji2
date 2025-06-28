@@ -287,18 +287,62 @@ def read_csv_file(file_path, max_rows=100):
     """Read CSV file and return as list of dictionaries"""
     try:
         if not os.path.exists(file_path):
-            return []
+            return [{'error': f'File not found: {file_path}'}]
         
         data = []
-        with open(file_path, 'r', encoding='utf-8') as file:
-            reader = csv.DictReader(file)
-            for i, row in enumerate(reader):
-                if i >= max_rows:
-                    break
-                data.append(row)
+        
+        # Try different encodings
+        encodings = ['utf-8', 'latin-1', 'cp1252', 'iso-8859-1']
+        
+        for encoding in encodings:
+            try:
+                with open(file_path, 'r', encoding=encoding) as file:
+                    # Read first few lines to detect format
+                    first_lines = [file.readline() for _ in range(5)]
+                    file.seek(0)  # Reset to beginning
+                    
+                    # Try to read as CSV
+                    reader = csv.DictReader(file)
+                    
+                    for i, row in enumerate(reader):
+                        if i >= max_rows:
+                            break
+                        # Clean up the data
+                        cleaned_row = {}
+                        for key, value in row.items():
+                            if key:  # Skip empty column names
+                                cleaned_row[key.strip()] = value.strip() if value else ''
+                        data.append(cleaned_row)
+                    
+                # If we get here, reading was successful
+                break
+                
+            except UnicodeDecodeError:
+                continue
+            except Exception as e:
+                # Try reading as plain text if CSV fails
+                try:
+                    file.seek(0)
+                    lines = file.readlines()
+                    if lines:
+                        # Assume first line is header
+                        headers = lines[0].strip().split(',')
+                        for line in lines[1:max_rows+1]:
+                            values = line.strip().split(',')
+                            if len(values) == len(headers):
+                                row = dict(zip(headers, values))
+                                data.append(row)
+                except:
+                    pass
+                break
+        
+        if not data:
+            return [{'error': f'Could not read CSV file: {file_path}. Tried encodings: {encodings}'}]
+        
         return data
+        
     except Exception as e:
-        return [{'error': f'Error reading file: {str(e)}'}]
+        return [{'error': f'Error reading file {file_path}: {str(e)}'}]
 
 def read_log_file(file_path, lines=300):
     """Read log file and return last N lines"""
@@ -386,17 +430,64 @@ def stop_script_route():
 @login_required
 def view_logs(coin):
     """View logs for a specific coin"""
-    coin_lower = coin.lower()
+    # Try different coin name formats
+    coin_variants = [
+        coin.lower(),  # bnb
+        coin.upper(),  # BNB
+        coin.lower() + 'usdt',  # bnbusdt
+        coin.upper() + 'USDT',  # BNBUSDT
+        coin.lower() + 'usdt',  # bnbusdt (lowercase)
+    ]
     
-    # File paths
-    trades_file = os.path.join(LOGS_PATH, f'psar_trades_{coin_lower}.csv')
-    positions_file = os.path.join(LOGS_PATH, f'psar_positions_{coin_lower}.csv')
-    log_file = os.path.join(LOGS_PATH, f'main_{coin_lower}.log')
+    trades_data = []
+    positions_data = []
+    log_lines = []
     
-    # Read data
-    trades_data = read_csv_file(trades_file)
-    positions_data = read_csv_file(positions_file)
-    log_lines = read_log_file(log_file)
+    # Try to find trades file
+    trades_file = None
+    for variant in coin_variants:
+        potential_file = os.path.join(LOGS_PATH, f'psar_trades_{variant}.csv')
+        if os.path.exists(potential_file):
+            trades_file = potential_file
+            break
+    
+    # Try to find positions file
+    positions_file = None
+    for variant in coin_variants:
+        potential_file = os.path.join(LOGS_PATH, f'psar_positions_{variant}.csv')
+        if os.path.exists(potential_file):
+            positions_file = potential_file
+            break
+    
+    # Try to find log file
+    log_file = None
+    for variant in coin_variants:
+        potential_file = os.path.join(LOGS_PATH, f'main_{variant}.log')
+        if os.path.exists(potential_file):
+            log_file = potential_file
+            break
+    
+    # Read data if files exist
+    if trades_file:
+        trades_data = read_csv_file(trades_file)
+    else:
+        # Debug: list available files
+        available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_trades_')]
+        trades_data = [{'error': f'Trades file not found. Available files: {available_files}'}]
+    
+    if positions_file:
+        positions_data = read_csv_file(positions_file)
+    else:
+        # Debug: list available files
+        available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_positions_')]
+        positions_data = [{'error': f'Positions file not found. Available files: {available_files}'}]
+    
+    if log_file:
+        log_lines = read_log_file(log_file)
+    else:
+        # Debug: list available files
+        available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('main_')]
+        log_lines = [f'Log file not found. Available files: {available_files}']
     
     return render_template('logs.html', 
                          coin=coin,
