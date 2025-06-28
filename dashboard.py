@@ -168,15 +168,20 @@ def start_script(script_name, leverage, trade_amount):
         # Prepare log file path
         log_file = os.path.join(LOGS_PATH, f'{script_name.replace(".py", "")}.log')
         
-        # Build the nohup command with environment variables
-        env_vars = f'LEVERAGE={leverage} TRADE_AMOUNT={trade_amount}'
-        nohup_command = f'nohup {env_vars} python3 {script_name} > {log_file} 2>&1 &'
+        # Build the nohup command
+        nohup_command = f'nohup python3 {script_name} > {log_file} 2>&1 &'
         
-        # Execute the command
+        # Set environment variables
+        env = os.environ.copy()
+        env['LEVERAGE'] = str(leverage)
+        env['TRADE_AMOUNT'] = str(trade_amount)
+        
+        # Execute the command with environment variables
         result = subprocess.run(
             nohup_command,
             shell=True,
             cwd=BASE_PATH,
+            env=env,
             capture_output=True,
             text=True
         )
