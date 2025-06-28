@@ -1,9 +1,10 @@
 import logging
-from strategies import eralp_strateji2
+import os
+from strategies import psar_atr_strategy
 from core.logging_config import LoggingConfig
 
 
-class MainEIGEN2:
+class MainEigen2:
     pass
 
 
@@ -15,10 +16,14 @@ class MainEIGEN2:
             logging_config = LoggingConfig()
             logger = logging_config.setup_logging("main_eigen2")
             
-            logger.info("EIGEN Trading Bot (Eralp Strategy 2) başlatılıyor...")
-            logger.info("Sembol: EIGENUSDT, Timeframe: 15m, Leverage: 10, Trade Amount: 200")
+            # Environment variables'dan leverage ve trade_amount oku
+            leverage = int(os.getenv('LEVERAGE', 10))
+            trade_amount = int(os.getenv('TRADE_AMOUNT', 100))
+            
+            logger.info("EIGEN2 Trading Bot başlatılıyor...")
+            logger.info(f"Sembol: EIGENUSDT, Timeframe: 15m, Leverage: {leverage}, Trade Amount: {trade_amount}")
 
-            bot = eralp_strateji2.Bot(symbol='EIGENUSDT', timeframe='15m', leverage=10, trade_amount=200)
+            bot = psar_atr_strategy.Bot(symbol='EIGENUSDT', timeframe='15m', leverage=leverage, trade_amount=trade_amount)
             logger.info("Bot başarıyla oluşturuldu")
             
             logger.info("Trading başlatılıyor...")

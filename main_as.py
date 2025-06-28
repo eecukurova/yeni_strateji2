@@ -1,5 +1,6 @@
 import logging
-from strategies.atr_strategy import Bot
+import os
+from strategies import psar_atr_strategy
 from core.logging_config import LoggingConfig
 
 class MainAS:
@@ -13,16 +14,19 @@ if __name__ == "__main__":
         logging_config = LoggingConfig()
         logger = logging_config.setup_logging("main_as")
         
-        logger.info("AS (ATR Strategy) Trading Bot başlatılıyor...")
-        logger.info("Sembol: ETHUSDT, Timeframe: 15m, Leverage: 10, Trade Amount: 100")
+        # Environment variables'dan leverage ve trade_amount oku
+        leverage = int(os.getenv('LEVERAGE', 10))
+        trade_amount = int(os.getenv('TRADE_AMOUNT', 100))
         
-        # Botu başlat
-        bot = Bot(symbol='ETHUSDT', timeframe='15m', leverage=10, trade_amount=100)
+        logger.info("AS Trading Bot başlatılıyor...")
+        logger.info(f"Sembol: ASUSDT, Timeframe: 15m, Leverage: {leverage}, Trade Amount: {trade_amount}")
+
+        bot = psar_atr_strategy.Bot(symbol='ASUSDT', timeframe='15m', leverage=leverage, trade_amount=trade_amount)
         logger.info("Bot başarıyla oluşturuldu")
         
         logger.info("Trading başlatılıyor...")
         bot.start_trading()
-        
+
     except Exception as e:
         if logger:
             logger.error(f"Bot çalıştırma hatası: {e}")

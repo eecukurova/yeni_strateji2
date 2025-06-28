@@ -1,4 +1,5 @@
 import logging
+import os
 from strategies import psar_atr_strategy
 from core.logging_config import LoggingConfig
 
@@ -13,10 +14,14 @@ if __name__ == "__main__":
         logging_config = LoggingConfig()
         logger = logging_config.setup_logging("main_near")
         
-        logger.info("NEAR Trading Bot başlatılıyor...")
-        logger.info("Sembol: NEARUSDT, Timeframe: 15m, Leverage: 10, Trade Amount: 200")
+        # Environment variables'dan leverage ve trade_amount oku
+        leverage = int(os.getenv('LEVERAGE', 10))
+        trade_amount = int(os.getenv('TRADE_AMOUNT', 100))
         
-        bot = psar_atr_strategy.Bot(symbol='NEARUSDT', timeframe='15m', leverage=10, trade_amount=100)
+        logger.info("NEAR Trading Bot başlatılıyor...")
+        logger.info(f"Sembol: NEARUSDT, Timeframe: 15m, Leverage: {leverage}, Trade Amount: {trade_amount}")
+        
+        bot = psar_atr_strategy.Bot(symbol='NEARUSDT', timeframe='15m', leverage=leverage, trade_amount=trade_amount)
         logger.info("Bot başarıyla oluşturuldu")
         
         logger.info("Trading başlatılıyor...")
