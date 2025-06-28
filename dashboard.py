@@ -304,15 +304,18 @@ def read_csv_file(file_path, max_rows=100):
                     # Try to read as CSV
                     reader = csv.DictReader(file)
                     
-                    for i, row in enumerate(reader):
-                        if i >= max_rows:
-                            break
+                    # Read all rows first
+                    all_rows = []
+                    for row in reader:
                         # Clean up the data
                         cleaned_row = {}
                         for key, value in row.items():
                             if key:  # Skip empty column names
                                 cleaned_row[key.strip()] = value.strip() if value else ''
-                        data.append(cleaned_row)
+                        all_rows.append(cleaned_row)
+                    
+                    # Return last max_rows
+                    data = all_rows[-max_rows:] if len(all_rows) > max_rows else all_rows
                     
                 # If we get here, reading was successful
                 break
@@ -327,11 +330,15 @@ def read_csv_file(file_path, max_rows=100):
                     if lines:
                         # Assume first line is header
                         headers = lines[0].strip().split(',')
-                        for line in lines[1:max_rows+1]:
+                        all_rows = []
+                        for line in lines[1:]:
                             values = line.strip().split(',')
                             if len(values) == len(headers):
                                 row = dict(zip(headers, values))
-                                data.append(row)
+                                all_rows.append(row)
+                        
+                        # Return last max_rows
+                        data = all_rows[-max_rows:] if len(all_rows) > max_rows else all_rows
                 except:
                     pass
                 break
@@ -460,13 +467,19 @@ def view_logs(coin):
             positions_file = potential_file
             break
     
-    # Try to find telegram file
+    # Try to find telegram file - also check for general telegram file
     telegram_file = None
     for variant in coin_variants:
         potential_file = os.path.join(LOGS_PATH, f'telegram_{variant}.csv')
         if os.path.exists(potential_file):
             telegram_file = potential_file
             break
+    
+    # If specific telegram file not found, try general telegram file
+    if not telegram_file:
+        general_telegram_file = os.path.join(LOGS_PATH, 'telegram_general.csv')
+        if os.path.exists(general_telegram_file):
+            telegram_file = general_telegram_file
     
     # Try to find log file
     log_file = None
@@ -478,28 +491,28 @@ def view_logs(coin):
     
     # Read data if files exist
     if trades_file:
-        trades_data = read_csv_file(trades_file)
+        trades_data = read_csv_file(trades_file, max_rows=300)  # Show last 300 rows
     else:
         # Debug: list available files
         available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_trades_')]
         trades_data = [{'error': f'Trades file not found. Available files: {available_files}'}]
     
     if positions_file:
-        positions_data = read_csv_file(positions_file)
+        positions_data = read_csv_file(positions_file, max_rows=300)  # Show last 300 rows
     else:
         # Debug: list available files
         available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_positions_')]
         positions_data = [{'error': f'Positions file not found. Available files: {available_files}'}]
     
     if telegram_file:
-        telegram_data = read_csv_file(telegram_file)
+        telegram_data = read_csv_file(telegram_file, max_rows=300)  # Show last 300 rows
     else:
         # Debug: list available files
         available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('telegram_')]
         telegram_data = [{'error': f'Telegram file not found. Available files: {available_files}'}]
     
     if log_file:
-        log_lines = read_log_file(log_file)
+        log_lines = read_log_file(log_file, lines=300)
     else:
         # Debug: list available files
         available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('main_')]
