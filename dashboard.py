@@ -441,6 +441,7 @@ def view_logs(coin):
     
     trades_data = []
     positions_data = []
+    telegram_data = []
     log_lines = []
     
     # Try to find trades file
@@ -457,6 +458,14 @@ def view_logs(coin):
         potential_file = os.path.join(LOGS_PATH, f'psar_positions_{variant}.csv')
         if os.path.exists(potential_file):
             positions_file = potential_file
+            break
+    
+    # Try to find telegram file
+    telegram_file = None
+    for variant in coin_variants:
+        potential_file = os.path.join(LOGS_PATH, f'telegram_{variant}.csv')
+        if os.path.exists(potential_file):
+            telegram_file = potential_file
             break
     
     # Try to find log file
@@ -482,6 +491,13 @@ def view_logs(coin):
         available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_positions_')]
         positions_data = [{'error': f'Positions file not found. Available files: {available_files}'}]
     
+    if telegram_file:
+        telegram_data = read_csv_file(telegram_file)
+    else:
+        # Debug: list available files
+        available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('telegram_')]
+        telegram_data = [{'error': f'Telegram file not found. Available files: {available_files}'}]
+    
     if log_file:
         log_lines = read_log_file(log_file)
     else:
@@ -493,6 +509,7 @@ def view_logs(coin):
                          coin=coin,
                          trades_data=trades_data,
                          positions_data=positions_data,
+                         telegram_data=telegram_data,
                          log_lines=log_lines)
 
 @app.route('/api/process_status')
@@ -799,6 +816,11 @@ def get_template(template_name):
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link" id="telegram-tab" data-bs-toggle="tab" data-bs-target="#telegram" type="button" role="tab">
+                    <i class="fas fa-comments"></i> Telegram
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link" id="logs-tab" data-bs-toggle="tab" data-bs-target="#logs" type="button" role="tab">
                     <i class="fas fa-file-alt"></i> Logs
                 </button>
@@ -869,6 +891,40 @@ def get_template(template_name):
                             </div>
                         {% else %}
                             <p class="text-muted">No position data available.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-pane fade" id="telegram" role="tabpanel">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>Telegram Messages</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if telegram_data %}
+                            <div class="table-responsive">
+                                <table class="table table-striped table-sm">
+                                    <thead>
+                                        <tr>
+                                            {% for header in telegram_data[0].keys() %}
+                                                <th>{{ header }}</th>
+                                            {% endfor %}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for row in telegram_data %}
+                                            <tr>
+                                                {% for value in row.values() %}
+                                                    <td>{{ value }}</td>
+                                                {% endfor %}
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <p class="text-muted">No telegram data available.</p>
                         {% endif %}
                     </div>
                 </div>

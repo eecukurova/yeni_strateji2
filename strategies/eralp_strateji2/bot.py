@@ -37,7 +37,7 @@ class Bot:
         self.trade_amount = trade_amount
 
         # Telegram bildirim servisi
-        self.telegram = TelegramNotifier()
+        self.telegram = TelegramNotifier(symbol=symbol)
 
         # Config dosyasını yükle
         self.config = Config()
