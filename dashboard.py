@@ -558,6 +558,71 @@ def api_process_status():
     
     return jsonify(status)
 
+@app.route('/strategies')
+@login_required
+def strategies():
+    """Strategies page"""
+    strategies_info = [
+        {
+            'id': 'psar_atr_strategy',
+            'name': 'PSAR ATR Strategy',
+            'name_tr': 'PSAR ATR Stratejisi',
+            'description_tr': 'PSAR ATR Stratejisi, Parabolic SAR ve Average True Range (ATR) göstergelerini birleştiren gelişmiş bir momentum tabanlı trading stratejisidir. Bu strateji, trend yönünü belirlemek için PSAR noktalarını kullanırken, ATR ile volatilite bazlı stop-loss ve take-profit seviyeleri belirler. Özellikle güçlü trendlerde yüksek kazanç potansiyeli sunar ve ani fiyat hareketlerine karşı koruma sağlar. Strateji, 15 dakikalık timeframe\'de çalışarak hem kısa vadeli fırsatları yakalar hem de trend devam ederken pozisyonları korur.',
+            'description_en': 'The PSAR ATR Strategy is an advanced momentum-based trading strategy that combines Parabolic SAR and Average True Range (ATR) indicators. This strategy uses PSAR points to determine trend direction while employing ATR for volatility-based stop-loss and take-profit levels. It offers high profit potential in strong trends while providing protection against sudden price movements. The strategy operates on 15-minute timeframes, capturing both short-term opportunities and maintaining positions as trends continue.',
+            'risk_level': 'Orta',
+            'best_performance': 'Güçlü trendlerde'
+        },
+        {
+            'id': 'atr_strategy',
+            'name': 'ATR Strategy',
+            'name_tr': 'ATR Stratejisi',
+            'description_tr': 'ATR Stratejisi, Average True Range göstergesine dayalı volatilite odaklı bir trading yaklaşımıdır. Bu strateji, piyasa volatilitesini analiz ederek optimal giriş ve çıkış noktalarını belirler. ATR değerlerine göre dinamik stop-loss seviyeleri ayarlar ve risk yönetimini volatilite bazlı yapar. Strateji, düşük volatilite dönemlerinde daha konservatif, yüksek volatilite dönemlerinde ise daha agresif pozisyonlar alır. Bu yaklaşım, piyasa koşullarına adapte olarak tutarlı performans sağlar.',
+            'description_en': 'The ATR Strategy is a volatility-focused trading approach based on the Average True Range indicator. This strategy analyzes market volatility to determine optimal entry and exit points. It sets dynamic stop-loss levels based on ATR values and implements volatility-based risk management. The strategy takes more conservative positions during low volatility periods and more aggressive positions during high volatility periods. This approach adapts to market conditions to provide consistent performance.',
+            'risk_level': 'Düşük-Orta',
+            'best_performance': 'Değişken piyasalarda'
+        },
+        {
+            'id': 'eralp_strateji2',
+            'name': 'Eralp Strategy 2',
+            'name_tr': 'Eralp Strateji 2',
+            'description_tr': 'Eralp Strategy 2, özel olarak geliştirilmiş çoklu gösterge tabanlı bir trading stratejisidir. Bu strateji, RSI, MACD, Bollinger Bands ve özel momentum göstergelerini entegre ederek kapsamlı bir piyasa analizi yapar. Sinyal onaylama mekanizması ile yanlış sinyalleri minimize eder ve yüksek doğruluk oranı hedefler. Strateji, hem trend takibi hem de karşı-trend fırsatlarını değerlendirir. Gelişmiş risk yönetimi ve pozisyon boyutlandırma algoritmaları ile maksimum kazanç potansiyeli sunar.',
+            'description_en': 'Eralp Strategy 2 is a specially developed multi-indicator based trading strategy. This strategy integrates RSI, MACD, Bollinger Bands, and custom momentum indicators to perform comprehensive market analysis. It minimizes false signals through signal confirmation mechanisms and targets high accuracy rates. The strategy evaluates both trend-following and counter-trend opportunities. It offers maximum profit potential through advanced risk management and position sizing algorithms.',
+            'risk_level': 'Orta-Yüksek',
+            'best_performance': 'Tüm piyasa koşullarında'
+        }
+    ]
+    
+    return render_template('strategies.html', strategies=strategies_info)
+
+@app.route('/request_strategy', methods=['POST'])
+@login_required
+def request_strategy():
+    """Request a strategy via Telegram"""
+    strategy_id = request.form.get('strategy_id')
+    strategy_name = request.form.get('strategy_name')
+    username = current_user.id
+    
+    try:
+        # Import telegram notifier
+        from core.telegram.telegram_notifier import TelegramNotifier
+        
+        # Create telegram message
+        message = f"🤖 **Strateji Talebi**\n\n👤 **Kullanıcı:** {username}\n📊 **Talep Edilen Strateji:** {strategy_name}\n⏰ **Tarih:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\nBu kullanıcı yukarıdaki stratejiyi talep etmektedir."
+        
+        # Send telegram message
+        telegram = TelegramNotifier(symbol="GENERAL")
+        success = telegram.send_message(message)
+        
+        if success:
+            flash(f'✅ Strateji talebiniz başarıyla gönderildi: {strategy_name}', 'success')
+        else:
+            flash(f'❌ Strateji talebi gönderilemedi. Lütfen daha sonra tekrar deneyin.', 'error')
+            
+    except Exception as e:
+        flash(f'❌ Hata oluştu: {str(e)}', 'error')
+    
+    return redirect(url_for('strategies'))
+
 # HTML Templates
 @app.route('/templates/<template_name>')
 def get_template(template_name):
@@ -982,6 +1047,183 @@ def get_template(template_name):
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+        '''
+    elif template_name == 'strategies.html':
+        return '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strategies - Trading Bot Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .status-running { color: #28a745; }
+        .status-stopped { color: #dc3545; }
+        .card-header { background-color: #f8f9fa; }
+        .table-responsive { max-height: 400px; overflow-y: auto; }
+        .log-content { 
+            background-color: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            border-radius: 0.375rem; 
+            padding: 1rem; 
+            font-family: 'Courier New', monospace; 
+            font-size: 0.875rem; 
+            max-height: 500px; 
+            overflow-y: auto; 
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-robot"></i> Trading Bot Dashboard
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    <i class="fas fa-user"></i> {{ current_user.id }}
+                </span>
+                <a class="nav-link" href="/logout">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'success' if category == 'success' else 'danger' }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-list"></i> Trading Bot Strategies
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            {% for strategy in strategies %}
+                            <div class="col-md-6 col-lg-4 mb-4">
+                                <div class="card h-100">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <h6 class="mb-0">
+                                            <i class="fas fa-coins"></i> {{ strategy.name }}
+                                        </h6>
+                                        <span class="badge bg-{{ 'success' if strategy.running else 'secondary' }}">
+                                            <i class="fas fa-{{ 'play' if strategy.running else 'stop' }}"></i>
+                                            {{ 'Running' if strategy.running else 'Stopped' }}
+                                        </span>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="card-text">
+                                            <strong>Description:</strong> {{ strategy.description_tr }}<br>
+                                            {% if strategy.process_info %}
+                                                <strong>PID:</strong> {{ strategy.process_info.pid }}<br>
+                                                <strong>Memory:</strong> {{ strategy.process_info.memory_mb }} MB<br>
+                                                <strong>Started:</strong> {{ strategy.process_info.start_time }}
+                                            {% endif %}
+                                        </p>
+                                        
+                                        {% if strategy.running %}
+                                            <form method="POST" action="/stop_script" class="d-inline">
+                                                <input type="hidden" name="script_name" value="{{ strategy.filename }}">
+                                                <button type="submit" class="btn btn-danger btn-sm">
+                                                    <i class="fas fa-stop"></i> Stop
+                                                </button>
+                                            </form>
+                                        {% else %}
+                                            <button type="button" class="btn btn-success btn-sm" 
+                                                    data-bs-toggle="modal" 
+                                                    data-bs-target="#startModal{{ loop.index }}">
+                                                <i class="fas fa-play"></i> Start
+                                            </button>
+                                        {% endif %}
+                                        
+                                        <a href="/logs/{{ strategy.coin }}" class="btn btn-info btn-sm">
+                                            <i class="fas fa-file-alt"></i> Logs
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Start Modal for each strategy -->
+                            <div class="modal fade" id="startModal{{ loop.index }}" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Start {{ strategy.name }} Bot</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <form method="POST" action="/start_script">
+                                            <div class="modal-body">
+                                                <input type="hidden" name="script_name" value="{{ strategy.filename }}">
+                                                
+                                                <div class="mb-3">
+                                                    <label for="leverage{{ loop.index }}" class="form-label">Leverage</label>
+                                                    <input type="number" class="form-control" id="leverage{{ loop.index }}" 
+                                                           name="leverage" value="10" min="1" max="100">
+                                                </div>
+                                                
+                                                <div class="mb-3">
+                                                    <label for="trade_amount{{ loop.index }}" class="form-label">Trade Amount</label>
+                                                    <input type="number" class="form-control" id="trade_amount{{ loop.index }}" 
+                                                           name="trade_amount" value="200" min="1">
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <button type="submit" class="btn btn-success">
+                                                    <i class="fas fa-play"></i> Start Bot
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Auto-refresh process status every 10 seconds
+        setInterval(function() {
+            fetch('/api/process_status')
+                .then(response => response.json())
+                .then(data => {
+                    // Update status badges and process info
+                    Object.keys(data).forEach(scriptName => {
+                        const status = data[scriptName];
+                        const card = document.querySelector(`[data-script="${scriptName}"]`);
+                        if (card) {
+                            const badge = card.querySelector('.badge');
+                            const statusText = status.running ? 'Running' : 'Stopped';
+                            const statusClass = status.running ? 'success' : 'secondary';
+                            badge.className = `badge bg-${statusClass}`;
+                            badge.innerHTML = `<i class="fas fa-${status.running ? 'play' : 'stop'}"></i> ${statusText}`;
+                        }
+                    });
+                });
+        }, 10000);
+    </script>
 </body>
 </html>
         '''
