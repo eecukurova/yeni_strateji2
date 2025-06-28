@@ -611,7 +611,7 @@ def request_strategy():
         
         # Send telegram message
         telegram = TelegramNotifier(symbol="GENERAL")
-        success = telegram.send_message(message)
+        success = telegram.send_notification(message)
         
         if success:
             flash(f'✅ Strateji talebiniz başarıyla gönderildi: {strategy_name}', 'success')
