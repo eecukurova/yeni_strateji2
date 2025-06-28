@@ -119,6 +119,18 @@
                                                 <input type="hidden" name="script_name" value="{{ script.filename }}">
                                                 
                                                 <div class="mb-3">
+                                                    <label for="strategy{{ loop.index }}" class="form-label">Strategy</label>
+                                                    <select class="form-select" id="strategy{{ loop.index }}" name="strategy">
+                                                        {% for strategy in strategies %}
+                                                            <option value="{{ strategy.value }}" 
+                                                                    {{ 'selected' if strategy.value == 'psar_atr_strategy' }}>
+                                                                {{ strategy.name }}
+                                                            </option>
+                                                        {% endfor %}
+                                                    </select>
+                                                </div>
+                                                
+                                                <div class="mb-3">
                                                     <label for="leverage{{ loop.index }}" class="form-label">Leverage</label>
                                                     <input type="number" class="form-control" id="leverage{{ loop.index }}" 
                                                            name="leverage" value="10" min="1" max="100">

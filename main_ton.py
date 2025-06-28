@@ -1,6 +1,6 @@
 import logging
 import os
-from strategies import psar_atr_strategy
+import importlib
 from core.logging_config import LoggingConfig
 
 class MainTON:
@@ -14,14 +14,17 @@ if __name__ == "__main__":
         logging_config = LoggingConfig()
         logger = logging_config.setup_logging("main_ton")
         
-        # Environment variables'dan leverage ve trade_amount oku
+        # Environment variables'dan leverage, trade_amount ve strategy oku
         leverage = int(os.getenv('LEVERAGE', 10))
         trade_amount = int(os.getenv('TRADE_AMOUNT', 100))
+        strategy = os.getenv('STRATEGY', 'psar_atr_strategy')
         
         logger.info("TON Trading Bot başlatılıyor...")
-        logger.info(f"Sembol: TONUSDT, Timeframe: 15m, Leverage: {leverage}, Trade Amount: {trade_amount}")
+        logger.info(f"Sembol: TONUSDT, Timeframe: 15m, Leverage: {leverage}, Trade Amount: {trade_amount}, Strategy: {strategy}")
 
-        bot = psar_atr_strategy.Bot(symbol='TONUSDT', timeframe='15m', leverage=leverage, trade_amount=trade_amount)
+        # Strategy'yi dinamik olarak import et
+        strategy_module = importlib.import_module(f'strategies.{strategy}')
+        bot = strategy_module.Bot(symbol='TONUSDT', timeframe='15m', leverage=leverage, trade_amount=trade_amount)
         logger.info("Bot başarıyla oluşturuldu")
         
         logger.info("Trading başlatılıyor...")

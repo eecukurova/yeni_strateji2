@@ -24,6 +24,7 @@ BASE_PATH = "/root/test_coinmatik/yeni_strateji2"
 LOGS_PATH = os.path.join(BASE_PATH, "logs")
 DEFAULT_LEVERAGE = 10
 DEFAULT_TRADE_AMOUNT = 200
+DEFAULT_STRATEGY = "psar_atr_strategy"
 
 # Flask app setup
 app = Flask(__name__)
@@ -150,7 +151,7 @@ def get_process_info(script_name):
                     del running_processes[script_name]
     return None
 
-def start_script(script_name, leverage, trade_amount):
+def start_script(script_name, leverage, trade_amount, strategy):
     """Start a trading bot script using nohup for proper logging"""
     script_path = os.path.join(BASE_PATH, script_name)
     
@@ -175,6 +176,7 @@ def start_script(script_name, leverage, trade_amount):
         env = os.environ.copy()
         env['LEVERAGE'] = str(leverage)
         env['TRADE_AMOUNT'] = str(trade_amount)
+        env['STRATEGY'] = str(strategy)
         
         # Execute the command with environment variables
         result = subprocess.run(
@@ -221,6 +223,7 @@ def start_script(script_name, leverage, trade_amount):
                         'process': dummy_process,
                         'leverage': leverage,
                         'trade_amount': trade_amount,
+                        'strategy': strategy,
                         'start_time': datetime.now(),
                         'pid': script_pid
                     }
@@ -381,7 +384,14 @@ def dashboard():
         script['running'] = is_script_running(script['filename'])
         script['process_info'] = get_process_info(script['filename'])
     
-    return render_template('dashboard.html', scripts=scripts)
+    # Available strategies
+    strategies = [
+        {'value': 'psar_atr_strategy', 'name': 'PSAR ATR Strategy'},
+        {'value': 'atr_strategy', 'name': 'ATR Strategy'},
+        {'value': 'eralp_strateji2', 'name': 'Eralp Strategy 2'}
+    ]
+    
+    return render_template('dashboard.html', scripts=scripts, strategies=strategies)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -414,8 +424,9 @@ def start_script_route():
     script_name = request.form['script_name']
     leverage = int(request.form.get('leverage', DEFAULT_LEVERAGE))
     trade_amount = int(request.form.get('trade_amount', DEFAULT_TRADE_AMOUNT))
+    strategy = request.form.get('strategy', DEFAULT_STRATEGY)
     
-    success, message = start_script(script_name, leverage, trade_amount)
+    success, message = start_script(script_name, leverage, trade_amount, strategy)
     
     if success:
         flash(f'✅ {message}', 'success')
