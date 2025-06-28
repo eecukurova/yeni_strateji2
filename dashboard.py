@@ -77,33 +77,81 @@ def scan_scripts():
 def is_script_running(script_name):
     """Check if a script is currently running"""
     with process_lock:
-        return script_name in running_processes and running_processes[script_name]['process'].poll() is None
+        if script_name in running_processes:
+            process_info = running_processes[script_name]
+            pid = process_info.get('pid')
+            
+            if pid:
+                try:
+                    # Check if process exists
+                    psutil.Process(pid)
+                    return True
+                except psutil.NoSuchProcess:
+                    # Process has finished
+                    del running_processes[script_name]
+                    return False
+            else:
+                # Fallback to old method
+                process = process_info['process']
+                if process.poll() is None:
+                    return True
+                else:
+                    # Process has finished
+                    del running_processes[script_name]
+                    return False
+    return False
 
 def get_process_info(script_name):
     """Get detailed process information"""
     with process_lock:
         if script_name in running_processes:
-            process = running_processes[script_name]['process']
-            if process.poll() is None:  # Process is still running
+            process_info = running_processes[script_name]
+            pid = process_info.get('pid')
+            
+            if pid:
                 try:
                     # Get process details using psutil
-                    for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'create_time', 'memory_info']):
-                        if proc.info['pid'] == process.pid:
-                            return {
-                                'pid': proc.info['pid'],
-                                'memory_mb': round(proc.info['memory_info'].rss / 1024 / 1024, 2),
-                                'start_time': datetime.fromtimestamp(proc.info['create_time']).strftime('%Y-%m-%d %H:%M:%S'),
-                                'status': 'Running'
-                            }
-                except:
-                    pass
+                    proc = psutil.Process(pid)
+                    return {
+                        'pid': pid,
+                        'memory_mb': round(proc.memory_info().rss / 1024 / 1024, 2),
+                        'start_time': datetime.fromtimestamp(proc.create_time()).strftime('%Y-%m-%d %H:%M:%S'),
+                        'status': 'Running'
+                    }
+                except psutil.NoSuchProcess:
+                    # Process has finished
+                    del running_processes[script_name]
+                    return None
+                except (psutil.AccessDenied, psutil.ZombieProcess):
+                    return {
+                        'pid': pid,
+                        'memory_mb': 0,
+                        'start_time': 'Unknown',
+                        'status': 'Running (Limited Info)'
+                    }
             else:
-                # Process has finished
-                del running_processes[script_name]
+                # Fallback to old method
+                process = process_info['process']
+                if process.poll() is None:  # Process is still running
+                    try:
+                        # Get process details using psutil
+                        for proc in psutil.process_iter(['pid', 'name', 'cmdline', 'create_time', 'memory_info']):
+                            if proc.info['pid'] == process.pid:
+                                return {
+                                    'pid': proc.info['pid'],
+                                    'memory_mb': round(proc.info['memory_info'].rss / 1024 / 1024, 2),
+                                    'start_time': datetime.fromtimestamp(proc.info['create_time']).strftime('%Y-%m-%d %H:%M:%S'),
+                                    'status': 'Running'
+                                }
+                    except:
+                        pass
+                else:
+                    # Process has finished
+                    del running_processes[script_name]
     return None
 
 def start_script(script_name, leverage, trade_amount):
-    """Start a trading bot script"""
+    """Start a trading bot script using nohup for proper logging"""
     script_path = os.path.join(BASE_PATH, script_name)
     
     if not os.path.exists(script_path):
@@ -114,29 +162,68 @@ def start_script(script_name, leverage, trade_amount):
         return False, f"Script {script_name} is already running"
     
     try:
-        # Change to the script directory
-        env = os.environ.copy()
-        env['PYTHONPATH'] = BASE_PATH
+        # Create logs directory if it doesn't exist
+        os.makedirs(LOGS_PATH, exist_ok=True)
         
-        # Start the process
-        process = subprocess.Popen(
-            [sys.executable, script_path],
+        # Prepare log file path
+        log_file = os.path.join(LOGS_PATH, f'{script_name.replace(".py", "")}.log')
+        
+        # Build the nohup command
+        nohup_command = f'nohup python3 {script_name} > {log_file} 2>&1 &'
+        
+        # Execute the command
+        result = subprocess.run(
+            nohup_command,
+            shell=True,
             cwd=BASE_PATH,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True
         )
         
-        with process_lock:
-            running_processes[script_name] = {
-                'process': process,
-                'leverage': leverage,
-                'trade_amount': trade_amount,
-                'start_time': datetime.now()
-            }
-        
-        return True, f"Script {script_name} started successfully (PID: {process.pid})"
+        if result.returncode == 0:
+            # Get the PID from the output or find it by process name
+            time.sleep(1)  # Give the process time to start
+            
+            # Find the process by script name
+            script_pid = None
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = proc.info['cmdline']
+                    if cmdline and script_name in ' '.join(cmdline):
+                        script_pid = proc.info['pid']
+                        break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+            
+            if script_pid:
+                # Create a dummy process object for tracking
+                class DummyProcess:
+                    def __init__(self, pid):
+                        self.pid = pid
+                    
+                    def poll(self):
+                        try:
+                            psutil.Process(self.pid)
+                            return None  # Still running
+                        except psutil.NoSuchProcess:
+                            return 0  # Finished
+                
+                dummy_process = DummyProcess(script_pid)
+                
+                with process_lock:
+                    running_processes[script_name] = {
+                        'process': dummy_process,
+                        'leverage': leverage,
+                        'trade_amount': trade_amount,
+                        'start_time': datetime.now(),
+                        'pid': script_pid
+                    }
+                
+                return True, f"Script {script_name} started successfully (PID: {script_pid})"
+            else:
+                return False, f"Script {script_name} started but PID not found"
+        else:
+            return False, f"Error starting script {script_name}: {result.stderr}"
     
     except Exception as e:
         return False, f"Error starting script {script_name}: {str(e)}"
@@ -145,18 +232,52 @@ def stop_script(script_name):
     """Stop a running trading bot script"""
     with process_lock:
         if script_name in running_processes:
-            process = running_processes[script_name]['process']
+            process_info = running_processes[script_name]
             try:
-                # Try graceful termination first
-                process.terminate()
-                time.sleep(2)
-                
-                # Force kill if still running
-                if process.poll() is None:
-                    process.kill()
-                
-                del running_processes[script_name]
-                return True, f"Script {script_name} stopped successfully"
+                # Get the PID
+                pid = process_info.get('pid')
+                if pid:
+                    # Try to kill the process using kill command
+                    kill_result = subprocess.run(
+                        f'kill {pid}',
+                        shell=True,
+                        capture_output=True,
+                        text=True
+                    )
+                    
+                    if kill_result.returncode == 0:
+                        # Wait a bit and check if process is still running
+                        time.sleep(2)
+                        
+                        # Force kill if still running
+                        try:
+                            psutil.Process(pid)
+                            # Process still running, force kill
+                            subprocess.run(f'kill -9 {pid}', shell=True)
+                        except psutil.NoSuchProcess:
+                            pass  # Process already stopped
+                        
+                        del running_processes[script_name]
+                        return True, f"Script {script_name} stopped successfully"
+                    else:
+                        return False, f"Error stopping script {script_name}: {kill_result.stderr}"
+                else:
+                    # Fallback to old method if PID not available
+                    process = process_info['process']
+                    try:
+                        # Try graceful termination first
+                        process.terminate()
+                        time.sleep(2)
+                        
+                        # Force kill if still running
+                        if process.poll() is None:
+                            process.kill()
+                        
+                        del running_processes[script_name]
+                        return True, f"Script {script_name} stopped successfully"
+                    except Exception as e:
+                        return False, f"Error stopping script {script_name}: {str(e)}"
+                        
             except Exception as e:
                 return False, f"Error stopping script {script_name}: {str(e)}"
         else:
