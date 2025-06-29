@@ -397,7 +397,8 @@ def dashboard():
     strategies = [
         {'value': 'psar_atr_strategy', 'name': 'PSAR ATR Strategy'},
         {'value': 'atr_strategy', 'name': 'ATR Strategy'},
-        {'value': 'eralp_strateji2', 'name': 'Eralp Strategy 2'}
+        {'value': 'eralp_strateji2', 'name': 'Eralp Strategy 2'},
+        {'value': 'skorlama_strategy', 'name': 'Skorlama Strategy'}
     ]
     
     return render_template('dashboard.html', scripts=scripts, strategies=strategies)
@@ -598,6 +599,15 @@ def strategies():
             'description_en': 'Eralp Strategy 2 is a specially developed multi-indicator based trading strategy. This strategy integrates RSI, MACD, Bollinger Bands, and custom momentum indicators to perform comprehensive market analysis. It minimizes false signals through signal confirmation mechanisms and targets high accuracy rates. The strategy evaluates both trend-following and counter-trend opportunities. It offers maximum profit potential through advanced risk management and position sizing algorithms.',
             'risk_level': 'Orta-Yüksek',
             'best_performance': 'Tüm piyasa koşullarında'
+        },
+        {
+            'id': 'skorlama_strategy',
+            'name': 'Skorlama Strategy',
+            'name_tr': 'Skorlama Stratejisi',
+            'description_tr': 'Skorlama Stratejisi, Pine Script\'teki "Psar ATR With Zone + Donchian + Smart Filter STRATEGY" stratejisinin Python implementasyonudur. Bu strateji, PSAR, ATR Zone, Donchian Channel, EMA 50/200, ADX ve RSI göstergelerini birleştirerek kapsamlı bir skorlama sistemi oluşturur. Minimum 71 skor gerektiren bu strateji, sadece güçlü sinyallerde işlem yapar. Trend durumu, volatilite, hacim ve momentum faktörlerini değerlendirerek yüksek doğruluk oranı hedefler. Adaptive Early Exit sistemi ile trend dönüşlerinde erken çıkış yaparak riski minimize eder.',
+            'description_en': 'The Skorlama Strategy is the Python implementation of the "Psar ATR With Zone + Donchian + Smart Filter STRATEGY" from Pine Script. This strategy combines PSAR, ATR Zone, Donchian Channel, EMA 50/200, ADX, and RSI indicators to create a comprehensive scoring system. Requiring a minimum score of 71, this strategy only trades on strong signals. It evaluates trend conditions, volatility, volume, and momentum factors to target high accuracy rates. The Adaptive Early Exit system minimizes risk by exiting early on trend reversals.',
+            'risk_level': 'Orta',
+            'best_performance': 'Güçlü trendlerde ve yüksek skorlu sinyallerde'
         }
     ]
     
