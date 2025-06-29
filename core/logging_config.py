@@ -61,4 +61,16 @@ class LoggingConfig:
         logger.info(f"Logger '{name}' başlatıldı - Log dosyası: {log_file}")
 
         return logger
+
+# Standalone setup_logging function for direct import
+def setup_logging(name):
+    """
+    Loglama yapılandırmasını kurar (standalone function)
+    Args:
+        name: Logger adı ve log dosya adı
+    Returns:
+        logger: Yapılandırılmış logger objesi
+    """
+    config = LoggingConfig()
+    return config.setup_logging(name)
         
