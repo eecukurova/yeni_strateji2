@@ -88,7 +88,16 @@
                                             {% if script.process_info %}
                                                 <strong>PID:</strong> {{ script.process_info.pid }}<br>
                                                 <strong>Memory:</strong> {{ script.process_info.memory_mb }} MB<br>
-                                                <strong>Started:</strong> {{ script.process_info.start_time }}
+                                                <strong>Started:</strong> {{ script.process_info.start_time }}<br>
+                                                {% if script.process_info.strategy %}
+                                                    <strong>Strategy:</strong> {{ script.process_info.strategy }}<br>
+                                                {% endif %}
+                                                {% if script.process_info.leverage %}
+                                                    <strong>Leverage:</strong> {{ script.process_info.leverage }}x<br>
+                                                {% endif %}
+                                                {% if script.process_info.trade_amount %}
+                                                    <strong>Trade Amount:</strong> {{ script.process_info.trade_amount }} USDT
+                                                {% endif %}
                                             {% endif %}
                                         </p>
                                         

@@ -117,7 +117,10 @@ def get_process_info(script_name):
                         'pid': pid,
                         'memory_mb': round(proc.memory_info().rss / 1024 / 1024, 2),
                         'start_time': datetime.fromtimestamp(proc.create_time()).strftime('%Y-%m-%d %H:%M:%S'),
-                        'status': 'Running'
+                        'status': 'Running',
+                        'strategy': process_info.get('strategy', 'Unknown'),
+                        'leverage': process_info.get('leverage', 'Unknown'),
+                        'trade_amount': process_info.get('trade_amount', 'Unknown')
                     }
                 except psutil.NoSuchProcess:
                     # Process has finished
@@ -128,7 +131,10 @@ def get_process_info(script_name):
                         'pid': pid,
                         'memory_mb': 0,
                         'start_time': 'Unknown',
-                        'status': 'Running (Limited Info)'
+                        'status': 'Running (Limited Info)',
+                        'strategy': process_info.get('strategy', 'Unknown'),
+                        'leverage': process_info.get('leverage', 'Unknown'),
+                        'trade_amount': process_info.get('trade_amount', 'Unknown')
                     }
             else:
                 # Fallback to old method
@@ -142,7 +148,10 @@ def get_process_info(script_name):
                                     'pid': proc.info['pid'],
                                     'memory_mb': round(proc.info['memory_info'].rss / 1024 / 1024, 2),
                                     'start_time': datetime.fromtimestamp(proc.info['create_time']).strftime('%Y-%m-%d %H:%M:%S'),
-                                    'status': 'Running'
+                                    'status': 'Running',
+                                    'strategy': process_info.get('strategy', 'Unknown'),
+                                    'leverage': process_info.get('leverage', 'Unknown'),
+                                    'trade_amount': process_info.get('trade_amount', 'Unknown')
                                 }
                     except:
                         pass
