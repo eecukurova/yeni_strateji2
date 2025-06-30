@@ -37,9 +37,19 @@ class MainBNB2:
                 logger.error(f"Bot çalıştırma hatası: {e}")
                 logger.exception("Detaylı hata bilgisi:")
             else:
-                print(f"HATA - Logger oluşturulamadı: {e}")
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                logging.error(f"HATA - Logger oluşturulamadı: {e}")
         except KeyboardInterrupt:
             if logger:
                 logger.info("Bot manuel olarak durduruldu (Ctrl+C)")
             else:
-                print("Bot manuel olarak durduruldu") 
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                logging.info("Bot manuel olarak durduruldu") 

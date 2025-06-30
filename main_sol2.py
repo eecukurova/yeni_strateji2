@@ -4,7 +4,7 @@ import importlib
 from core.logging_config import LoggingConfig
 
 
-class MainSol2:
+class MainSOL2:
     pass
 
 
@@ -37,9 +37,21 @@ class MainSol2:
                 logger.error(f"Bot çalıştırma hatası: {e}")
                 logger.exception("Detaylı hata bilgisi:")
             else:
-                print(f"HATA - Logger oluşturulamadı: {e}")
+                # Fallback logging if logger creation failed
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                logging.error(f"HATA - Logger oluşturulamadı: {e}")
         except KeyboardInterrupt:
             if logger:
                 logger.info("Bot manuel olarak durduruldu (Ctrl+C)")
             else:
-                print("Bot manuel olarak durduruldu") 
+                # Fallback logging if logger creation failed
+                logging.basicConfig(
+                    level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                )
+                logging.info("Bot manuel olarak durduruldu") 
