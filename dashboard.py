@@ -478,18 +478,54 @@ def view_logs(coin):
     telegram_data = []
     log_lines = []
     
-    # Try to find trades file
+    # Try to find trades file - check all possible formats
     trades_file = None
+    trades_file_patterns = [
+        f'psar_trades_{coin.lower()}.csv',  # PSAR ATR Strategy
+        f'atr_trades_{coin.lower()}.csv',   # ATR Strategy
+        f'trades_{coin.lower()}.csv',       # Skorlama Strategy
+        f'psar_trades_{coin.upper()}.csv',  # PSAR ATR Strategy (uppercase)
+        f'atr_trades_{coin.upper()}.csv',   # ATR Strategy (uppercase)
+        f'trades_{coin.upper()}.csv',       # Skorlama Strategy (uppercase)
+    ]
+    
+    # Add USDT variants
     for variant in coin_variants:
-        potential_file = os.path.join(LOGS_PATH, f'psar_trades_{variant}.csv')
+        trades_file_patterns.extend([
+            f'psar_trades_{variant}.csv',
+            f'atr_trades_{variant}.csv',
+            f'trades_{variant}.csv',
+        ])
+    
+    # Search for trades file
+    for pattern in trades_file_patterns:
+        potential_file = os.path.join(LOGS_PATH, pattern)
         if os.path.exists(potential_file):
             trades_file = potential_file
             break
     
-    # Try to find positions file
+    # Try to find positions file - check all possible formats
     positions_file = None
+    positions_file_patterns = [
+        f'psar_positions_{coin.lower()}.csv',  # PSAR ATR Strategy
+        f'atr_positions_{coin.lower()}.csv',   # ATR Strategy
+        f'positions_{coin.lower()}.csv',       # Skorlama Strategy
+        f'psar_positions_{coin.upper()}.csv',  # PSAR ATR Strategy (uppercase)
+        f'atr_positions_{coin.upper()}.csv',   # ATR Strategy (uppercase)
+        f'positions_{coin.upper()}.csv',       # Skorlama Strategy (uppercase)
+    ]
+    
+    # Add USDT variants
     for variant in coin_variants:
-        potential_file = os.path.join(LOGS_PATH, f'psar_positions_{variant}.csv')
+        positions_file_patterns.extend([
+            f'psar_positions_{variant}.csv',
+            f'atr_positions_{variant}.csv',
+            f'positions_{variant}.csv',
+        ])
+    
+    # Search for positions file
+    for pattern in positions_file_patterns:
+        potential_file = os.path.join(LOGS_PATH, pattern)
         if os.path.exists(potential_file):
             positions_file = potential_file
             break
@@ -521,14 +557,14 @@ def view_logs(coin):
         trades_data = read_csv_file(trades_file, max_rows=300)  # Show last 300 rows
     else:
         # Debug: list available files
-        available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_trades_')]
+        available_files = [f for f in os.listdir(LOGS_PATH) if 'trades' in f.lower()]
         trades_data = [{'error': f'Trades file not found. Available files: {available_files}'}]
     
     if positions_file:
         positions_data = read_csv_file(positions_file, max_rows=300)  # Show last 300 rows
     else:
         # Debug: list available files
-        available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('psar_positions_')]
+        available_files = [f for f in os.listdir(LOGS_PATH) if 'positions' in f.lower()]
         positions_data = [{'error': f'Positions file not found. Available files: {available_files}'}]
     
     if telegram_file:
