@@ -262,3 +262,174 @@ class OrderManager:
 
         except Exception as e:
             logging.error(f"Emir ilişkilendirme hatası: {e}")
+
+    def get_current_price(self):
+        """Mevcut fiyatı alır"""
+        try:
+            ticker = self.client.futures_symbol_ticker(symbol=self.symbol)
+            return float(ticker['price'])
+        except Exception as e:
+            logging.error(f"Mevcut fiyat alma hatası: {e}")
+            return None
+
+    def get_position_info(self):
+        """Pozisyon bilgilerini alır"""
+        try:
+            positions = self.client.futures_position_information(symbol=self.symbol)
+            if positions:
+                position = positions[0]
+                position_amount = float(position['positionAmt'])
+                if abs(position_amount) > 0:
+                    return {
+                        'size': abs(position_amount),
+                        'side': 'LONG' if position_amount > 0 else 'SHORT',
+                        'entry_price': float(position['entryPrice']),
+                        'unrealized_pnl': float(position['unRealizedProfit'])
+                    }
+            return None
+        except Exception as e:
+            logging.error(f"Pozisyon bilgisi alma hatası: {e}")
+            return None
+
+    def get_open_orders(self):
+        """Açık emirleri alır"""
+        try:
+            orders = self.client.futures_get_open_orders(symbol=self.symbol)
+            return orders
+        except Exception as e:
+            logging.error(f"Açık emirleri alma hatası: {e}")
+            return []
+
+    def check_tp_sl_orders(self):
+        """TP ve SL emirlerinin varlığını kontrol eder"""
+        try:
+            open_orders = self.get_open_orders()
+            has_tp = False
+            has_sl = False
+            
+            for order in open_orders:
+                if order['type'] == 'TAKE_PROFIT_MARKET':
+                    has_tp = True
+                elif order['type'] == 'STOP_MARKET':
+                    has_sl = True
+            
+            return has_tp, has_sl
+        except Exception as e:
+            logging.error(f"TP/SL kontrol hatası: {e}")
+            return False, False
+
+    def create_missing_tp_sl_orders(self, tp_price=None, sl_price=None, tp_percentage=None, sl_percentage=None):
+        """Eksik TP ve SL emirlerini oluşturur"""
+        try:
+            position_info = self.get_position_info()
+            if not position_info:
+                logging.warning("Pozisyon bulunamadı, TP/SL emirleri oluşturulamıyor")
+                return False, False
+
+            current_price = self.get_current_price()
+            if not current_price:
+                logging.error("Mevcut fiyat alınamadı")
+                return False, False
+
+            position_size = position_info['size']
+            position_side = position_info['side']
+            entry_price = position_info['entry_price']
+
+            # TP ve SL fiyatlarını hesapla
+            if not tp_price and tp_percentage:
+                if position_side == 'LONG':
+                    tp_price = current_price * (1 + tp_percentage / 100)
+                else:
+                    tp_price = current_price * (1 - tp_percentage / 100)
+
+            if not sl_price and sl_percentage:
+                if position_side == 'LONG':
+                    sl_price = current_price * (1 - sl_percentage / 100)
+                else:
+                    sl_price = current_price * (1 + sl_percentage / 100)
+
+            # Mevcut TP/SL emirlerini kontrol et
+            has_tp, has_sl = self.check_tp_sl_orders()
+            
+            tp_created = False
+            sl_created = False
+
+            # TP emri oluştur
+            if not has_tp and tp_price:
+                try:
+                    tp_side = 'SELL' if position_side == 'LONG' else 'BUY'
+                    tp_order = self.client.futures_create_order(
+                        symbol=self.symbol,
+                        side=tp_side,
+                        type='TAKE_PROFIT_MARKET',
+                        quantity=position_size,
+                        stopPrice=tp_price,
+                        timeInForce='GTC',
+                        reduceOnly=True
+                    )
+                    logging.info(f"TP emri oluşturuldu: ID={tp_order['orderId']}, Fiyat={tp_price}")
+                    tp_created = True
+                except Exception as e:
+                    logging.error(f"TP emri oluşturma hatası: {e}")
+
+            # SL emri oluştur
+            if not has_sl and sl_price:
+                try:
+                    sl_side = 'SELL' if position_side == 'LONG' else 'BUY'
+                    sl_order = self.client.futures_create_order(
+                        symbol=self.symbol,
+                        side=sl_side,
+                        type='STOP_MARKET',
+                        quantity=position_size,
+                        stopPrice=sl_price,
+                        timeInForce='GTC',
+                        reduceOnly=True
+                    )
+                    logging.info(f"SL emri oluşturuldu: ID={sl_order['orderId']}, Fiyat={sl_price}")
+                    sl_created = True
+                except Exception as e:
+                    logging.error(f"SL emri oluşturma hatası: {e}")
+
+            return tp_created, sl_created
+
+        except Exception as e:
+            logging.error(f"TP/SL emirleri oluşturma hatası: {e}")
+            return False, False
+
+    def monitor_and_ensure_tp_sl(self, tp_price=None, sl_price=None, tp_percentage=None, sl_percentage=None, delay=60):
+        """Pozisyon açıldıktan sonra belirtilen süre bekleyip TP/SL emirlerini kontrol eder ve eksikleri oluşturur"""
+        try:
+            logging.info(f"TP/SL kontrol işlemi {delay} saniye sonra başlayacak...")
+            time.sleep(delay)
+            
+            position_info = self.get_position_info()
+            if not position_info:
+                logging.warning("Pozisyon bulunamadı, TP/SL kontrol işlemi iptal ediliyor")
+                return
+
+            logging.info("TP/SL emirleri kontrol ediliyor...")
+            has_tp, has_sl = self.check_tp_sl_orders()
+            
+            if has_tp and has_sl:
+                logging.info("TP ve SL emirleri mevcut, ek işlem gerekmiyor")
+                return
+            
+            if not has_tp:
+                logging.warning("TP emri bulunamadı, yeni TP emri oluşturuluyor...")
+            if not has_sl:
+                logging.warning("SL emri bulunamadı, yeni SL emri oluşturuluyor...")
+                
+            tp_created, sl_created = self.create_missing_tp_sl_orders(
+                tp_price=tp_price,
+                sl_price=sl_price,
+                tp_percentage=tp_percentage,
+                sl_percentage=sl_percentage
+            )
+            
+            if tp_created:
+                logging.info("Eksik TP emri başarıyla oluşturuldu")
+            if sl_created:
+                logging.info("Eksik SL emri başarıyla oluşturuldu")
+                
+        except Exception as e:
+            logging.error(f"TP/SL kontrol ve oluşturma hatası: {e}")

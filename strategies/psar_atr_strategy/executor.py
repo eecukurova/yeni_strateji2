@@ -175,6 +175,16 @@ class Executor:
                     tp_order['orderId']
                 )
 
+                # Arka planda TP/SL kontrol mekanizmasını başlat
+                import threading
+                tp_sl_check_thread = threading.Thread(
+                    target=self.order_manager.monitor_and_ensure_tp_sl,
+                    args=(signal.take_profit, signal.stop_loss, None, None, 60),
+                    daemon=True
+                )
+                tp_sl_check_thread.start()
+                logging.info("TP/SL kontrol mekanizması başlatıldı (60 saniye sonra kontrol edilecek)")
+
                 return True
 
             else:

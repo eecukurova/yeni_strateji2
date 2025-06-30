@@ -5,17 +5,17 @@ import ntplib
 import socket
 from core import TradingSignal
 from adapters.binance.order_manager import OrderManager
-from strategies.eralp_strateji2.config import Config
+from strategies.skorlama_strategy.config import SkorlamaConfig
 
-class Executor:
+class SkorlamaBinanceExecutor:
     def __init__(self, client, symbol, trade_amount):
-        self.config = Config()
+        self.config = SkorlamaConfig()
         self.client = client
         self.symbol = symbol
         self.trade_amount = trade_amount
         self.recv_window = 60000  # 60 saniye
         self.time_offset = 0
-        self.time_tolerance = 60000  # Zaman farkı toleransı 60000ms (60 saniye) - önceden 10000ms idi
+        self.time_tolerance = 60000  # Zaman farkı toleransı 60000ms (60 saniye)
 
         self.monitor_thread = None
         self.order_manager = OrderManager(client.client, self.symbol)
@@ -232,11 +232,11 @@ class Executor:
 
             # Take profit ve stop loss hesaplama
             if side == 'BUY':
-                take_profit_price = entry_price * (1 + self.config.take_profit_percent)
-                stop_loss_price = entry_price * (1 - self.config.stop_loss_percent)
+                take_profit_price = entry_price * (1 + self.config.TAKE_PROFIT_PERCENT)
+                stop_loss_price = entry_price * (1 - self.config.STOP_LOSS_PERCENT)
             else:  # SELL
-                take_profit_price = entry_price * (1 - self.config.take_profit_percent)
-                stop_loss_price = entry_price * (1 + self.config.stop_loss_percent)
+                take_profit_price = entry_price * (1 - self.config.TAKE_PROFIT_PERCENT)
+                stop_loss_price = entry_price * (1 + self.config.STOP_LOSS_PERCENT)
 
             # Fiyatları Binance hassasiyetine göre yuvarla
             take_profit_price = round(take_profit_price, price_precision)
@@ -272,23 +272,6 @@ class Executor:
             logging.error(f"Take profit/Stop loss hesaplama hatası: {e}")
             return None, None
 
-    def check_price_distance(self, current_price, stop_price, price, position):
-        """Fiyatlar arasındaki mesafeyi kontrol eder"""
-        if current_price is None or stop_price is None or price is None:
-            return False
-
-        # Long pozisyon için stopPrice, current_price'tan düşük olmalı
-        if position == 1 and stop_price > current_price:
-            logging.error("Stop price, current price'tan düşük olmalı (Long pozisyon).")
-            return False
-
-        # Short pozisyon için stopPrice, current_price'tan yüksek olmalı
-        if position == -1 and stop_price < current_price:
-            logging.error("Stop price, current price'tan yüksek olmalı (Short pozisyon).")
-            return False
-
-        return True
-
     def get_position_direction(self, symbol):
         """Pozisyon yönünü belirler (1: Long, -1: Short, 0: Yok)"""
         try:
@@ -305,35 +288,15 @@ class Executor:
 
             if not positions:
                 logging.warning("API'den pozisyon bilgisi alınamadı")
-                # Pozisyon bilgisi alınamadığında açık emirleri kontrol et
-                open_orders = self.client.client.futures_get_open_orders(
-                    symbol=symbol,
-                    timestamp=self._get_timestamp(),
-                    recvWindow=self.recv_window
-                )
-                if open_orders:
-                    logging.warning(f"Pozisyon bilgisi yok ama {len(open_orders)} açık emir var")
-                    # Açık emirleri temizle
-                    self.force_cancel_all_orders()
                 return 0
 
             position = positions[0]
             position_amount = float(position['positionAmt'])
             position_size = abs(position_amount)
-            unrealized_profit = float(position.get('unRealizedProfit', 0))
 
-            # Pozisyon miktarı çok küçükse veya pozisyon kapalıysa
-            if position_size < 0.00001 or (position_amount == 0 and unrealized_profit == 0):
+            # Pozisyon miktarı çok küçükse
+            if position_size < 0.00001:
                 logging.info("Pozisyon kapalı veya ihmal edilebilir seviyede")
-                # Açık emirleri kontrol et ve temizle
-                open_orders = self.client.client.futures_get_open_orders(
-                    symbol=symbol,
-                    timestamp=self._get_timestamp(),
-                    recvWindow=self.recv_window
-                )
-                if open_orders:
-                    logging.warning(f"Pozisyon kapalı ama {len(open_orders)} açık emir var")
-                    self.force_cancel_all_orders()
                 return 0
 
             if position_amount > 0:
@@ -356,20 +319,6 @@ class Executor:
         except Exception as e:
             logging.error(f"Pozisyon kontrolü hatası: {e}")
             return 0
-
-    def monitor_position_status(self, symbol):
-        """Pozisyon durumunu izler"""
-        try:
-            position = self.get_position_direction(symbol)
-            
-            if position == 0:
-                return False  # Pozisyon kapalı
-            else:
-                return True  # Pozisyon açık
-                
-        except Exception as e:
-            logging.error(f"Pozisyon izleme hatası: {e}")
-            return None
 
     def force_cancel_all_orders(self):
         """Tüm açık emirleri iptal eder"""
