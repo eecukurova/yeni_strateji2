@@ -246,7 +246,7 @@ class Bot:
             self.telegram.send_notification(f"⚠️ Trade hatası: {str(e)}")
             return False
 
-    def _log_trade_activity_to_csv(self, action, side="", quantity=0, price=0, details=""):
+    def _log_trade_activity_to_csv(self, action, side="", quantity=0, price=0, details="", signal_data=None):
         """Tüm trade aktivitelerini CSV dosyasına kaydeder"""
         try:
             # logs klasörü yoksa oluştur
@@ -254,6 +254,37 @@ class Bot:
             
             # CSV dosya yolu - symbol bazlı trade log
             csv_filename = f'logs/atr_trades_{self.symbol.lower()}.csv'
+            
+            # Signal data varsa indikatör değerlerini al
+            signal_indicators = ""
+            if signal_data is not None:
+                indicators = []
+                # Temel indikatörler
+                if 'Close' in signal_data:
+                    indicators.append(f"Close: {signal_data['Close']:.4f}")
+                if 'atr' in signal_data:
+                    indicators.append(f"ATR: {signal_data['atr']:.6f}")
+                if 'atr_upper' in signal_data:
+                    indicators.append(f"ATR_Upper: {signal_data['atr_upper']:.4f}")
+                if 'atr_lower' in signal_data:
+                    indicators.append(f"ATR_Lower: {signal_data['atr_lower']:.4f}")
+                if 'ema_9' in signal_data:
+                    indicators.append(f"EMA_9: {signal_data['ema_9']:.4f}")
+                if 'ema_21' in signal_data:
+                    indicators.append(f"EMA_21: {signal_data['ema_21']:.4f}")
+                if 'rsi' in signal_data:
+                    indicators.append(f"RSI: {signal_data['rsi']:.2f}")
+                # Sinyal koşulları
+                if 'buy_signal' in signal_data:
+                    indicators.append(f"Buy_Signal: {signal_data['buy_signal']}")
+                if 'sell_signal' in signal_data:
+                    indicators.append(f"Sell_Signal: {signal_data['sell_signal']}")
+                if 'buy' in signal_data:
+                    indicators.append(f"Buy: {signal_data['buy']}")
+                if 'sell' in signal_data:
+                    indicators.append(f"Sell: {signal_data['sell']}")
+                
+                signal_indicators = " | ".join(indicators)
             
             # CSV verisi
             csv_data = [
@@ -263,7 +294,8 @@ class Bot:
                 side,                                          # BUY/SELL
                 f"{quantity:.6f}" if quantity else "",         # Miktar
                 f"{price:.4f}" if price else "",               # Fiyat
-                details                                        # Detaylar
+                details,                                       # Detaylar
+                signal_indicators                              # Sinyal indikatörleri
             ]
             
             # Dosya yoksa header ekle
@@ -274,7 +306,7 @@ class Bot:
                 
                 # Header yazma (sadece dosya yoksa)
                 if not file_exists:
-                    header = ['Tarih/Saat', 'Sembol', 'Aksiyon', 'Yön', 'Miktar', 'Fiyat', 'Detaylar']
+                    header = ['Tarih/Saat', 'Sembol', 'Aksiyon', 'Yön', 'Miktar', 'Fiyat', 'Detaylar', 'Sinyal_İndikatörleri']
                     writer.writerow(header)
                 
                 # Veri yazma
@@ -661,7 +693,8 @@ class Bot:
             action="SIGNAL_DETECTED",
             side=signal_type.upper(),
             price=row_data['Close'],
-            details=f"{signal_type} signal detected, waiting for confirmation ({config.signal_confirmation_delay}s)"
+            details=f"{signal_type} signal detected, waiting for confirmation ({config.signal_confirmation_delay}s)",
+            signal_data=row_data
         )
         
         logging.info(f"{signal_type.upper()} sinyali onay beklemesine alındı ({config.signal_confirmation_delay} saniye beklenecek)")
@@ -715,7 +748,8 @@ class Bot:
                     action="SIGNAL_CONFIRMED",
                     side=self.pending_signal.upper(),
                     price=last_row['Close'],
-                    details=f"{self.pending_signal} signal confirmed after {elapsed_time:.1f}s"
+                    details=f"{self.pending_signal} signal confirmed after {elapsed_time:.1f}s",
+                    signal_data=last_row
                 )
                 
                 # Aynı timeframe'de zaten işlem yapılıp yapılmadığını kontrol et
@@ -739,7 +773,8 @@ class Bot:
                     action="SIGNAL_CANCELLED",
                     side=self.pending_signal.upper(),
                     price=last_row['Close'],
-                    details=f"{self.pending_signal} signal cancelled after {elapsed_time:.1f}s - no longer active"
+                    details=f"{self.pending_signal} signal cancelled after {elapsed_time:.1f}s - no longer active",
+                    signal_data=last_row
                 )
             
             # Bekleyen sinyali temizle

@@ -316,14 +316,59 @@ class Bot:
             self.telegram.send_notification(f"⚠️ Trade hatası: {str(e)}")
             return False
 
-    def _log_trade_activity_to_csv(self, action, side="", quantity=0, price=0, details=""):
+    def _log_trade_activity_to_csv(self, action, side="", quantity=0, price=0, details="", signal_data=None):
         """Tüm trade aktivitelerini CSV dosyasına kaydeder"""
         try:
             # logs klasörü yoksa oluştur
             os.makedirs('logs', exist_ok=True)
             
             # CSV dosya yolu - symbol bazlı trade log
-            csv_filename = f'logs/psar_trades_{self.symbol.lower()}.csv'
+            csv_filename = f'logs/eralp_trades_{self.symbol.lower()}.csv'
+            
+            # Signal data varsa indikatör değerlerini al
+            signal_indicators = ""
+            if signal_data is not None:
+                indicators = []
+                # Temel indikatörler
+                if 'Close' in signal_data:
+                    indicators.append(f"Close: {signal_data['Close']:.4f}")
+                if 'psar' in signal_data:
+                    indicators.append(f"PSAR: {signal_data['psar']:.4f}")
+                if 'zone_decider' in signal_data:
+                    indicators.append(f"Zone: {signal_data['zone_decider']}")
+                if 'upper_donchian' in signal_data:
+                    indicators.append(f"Donchian_Upper: {signal_data['upper_donchian']:.4f}")
+                if 'middle_donchian' in signal_data:
+                    indicators.append(f"Donchian_Middle: {signal_data['middle_donchian']:.4f}")
+                if 'lower_donchian' in signal_data:
+                    indicators.append(f"Donchian_Lower: {signal_data['lower_donchian']:.4f}")
+                if 'ema_lower' in signal_data:
+                    indicators.append(f"EMA_Lower: {signal_data['ema_lower']:.4f}")
+                if 'ema_medium' in signal_data:
+                    indicators.append(f"EMA_Medium: {signal_data['ema_medium']:.4f}")
+                if 'hma_long' in signal_data:
+                    indicators.append(f"HMA_Long: {signal_data['hma_long']:.4f}")
+                if 'ema_50' in signal_data:
+                    indicators.append(f"EMA_50: {signal_data['ema_50']:.4f}")
+                if 'ema_200' in signal_data:
+                    indicators.append(f"EMA_200: {signal_data['ema_200']:.4f}")
+                if 'atr' in signal_data:
+                    indicators.append(f"ATR: {signal_data['atr']:.6f}")
+                if 'rsi' in signal_data:
+                    indicators.append(f"RSI: {signal_data['rsi']:.2f}")
+                # Sinyal koşulları
+                if 'buy_signal' in signal_data:
+                    indicators.append(f"Buy_Signal: {signal_data['buy_signal']}")
+                if 'sell_signal' in signal_data:
+                    indicators.append(f"Sell_Signal: {signal_data['sell_signal']}")
+                if 'market_conditions_ok' in signal_data:
+                    indicators.append(f"Market_OK: {signal_data['market_conditions_ok']}")
+                if 'score_filter_ok' in signal_data:
+                    indicators.append(f"Score_Filter_OK: {signal_data['score_filter_ok']}")
+                if 'can_trade' in signal_data:
+                    indicators.append(f"Can_Trade: {signal_data['can_trade']}")
+                
+                signal_indicators = " | ".join(indicators)
             
             # CSV verisi
             csv_data = [
@@ -333,7 +378,8 @@ class Bot:
                 side,                                          # BUY/SELL
                 f"{quantity:.6f}" if quantity else "",         # Miktar
                 f"{price:.4f}" if price else "",               # Fiyat
-                details                                        # Detaylar
+                details,                                       # Detaylar
+                signal_indicators                              # Sinyal indikatörleri
             ]
             
             # Dosya yoksa header ekle
@@ -344,7 +390,7 @@ class Bot:
                 
                 # Header yazma (sadece dosya yoksa)
                 if not file_exists:
-                    header = ['Tarih/Saat', 'Sembol', 'Aksiyon', 'Yön', 'Miktar', 'Fiyat', 'Detaylar']
+                    header = ['Tarih/Saat', 'Sembol', 'Aksiyon', 'Yön', 'Miktar', 'Fiyat', 'Detaylar', 'Sinyal_İndikatörleri']
                     writer.writerow(header)
                 
                 # Veri yazma
@@ -527,7 +573,8 @@ class Bot:
             action="SIGNAL_DETECTED",
             side=signal_type.upper(),
             price=row_data['Close'],
-            details=f"{signal_type} signal detected, waiting for confirmation ({self.config.signal_confirmation_delay}s)"
+            details=f"{signal_type} signal detected, waiting for confirmation ({self.config.signal_confirmation_delay}s)",
+            signal_data=row_data
         )
         
         logging.info(f"{signal_type.upper()} sinyali onay beklemesine alındı ({self.config.signal_confirmation_delay} saniye beklenecek)")
@@ -577,7 +624,8 @@ class Bot:
                     action="SIGNAL_CONFIRMED",
                     side=self.pending_signal.upper(),
                     price=last_row['Close'],
-                    details=f"{self.pending_signal} signal confirmed after {elapsed_time:.1f}s"
+                    details=f"{self.pending_signal} signal confirmed after {elapsed_time:.1f}s",
+                    signal_data=last_row
                 )
                 
                 # Aynı timeframe'de zaten işlem yapılıp yapılmadığını kontrol et
@@ -601,7 +649,8 @@ class Bot:
                     action="SIGNAL_CANCELLED",
                     side=self.pending_signal.upper(),
                     price=last_row['Close'],
-                    details=f"{self.pending_signal} signal cancelled after {elapsed_time:.1f}s - no longer active"
+                    details=f"{self.pending_signal} signal cancelled after {elapsed_time:.1f}s - no longer active",
+                    signal_data=last_row
                 )
             
             # Bekleyen sinyali temizle
