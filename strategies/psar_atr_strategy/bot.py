@@ -522,15 +522,75 @@ class Bot:
         self.pending_signal_time = current_time
         self.pending_signal_data = row_data.copy()
         
+        # Sinyal detaylarını hazırla
+        signal_details = self._prepare_signal_details(signal_type, row_data)
+        
         # Sinyal tespitini logla
         self._log_trade_activity_to_csv(
             action="SIGNAL_DETECTED",
             side=signal_type.upper(),
             price=row_data['Close'],
-            details=f"{signal_type} signal detected, waiting for confirmation ({self.config.signal_confirmation_delay}s)"
+            details=signal_details
         )
         
         logging.info(f"{signal_type.upper()} sinyali onay beklemesine alındı ({self.config.signal_confirmation_delay} saniye beklenecek)")
+    
+    def _prepare_signal_details(self, signal_type, row_data):
+        """Sinyal detaylarını hazırlar"""
+        try:
+            details = []
+            details.append(f"{signal_type.upper()} SIGNAL DETECTED")
+            details.append(f"Price: {row_data['Close']:.6f}")
+            details.append(f"Volume: {row_data.get('Volume', 'N/A')}")
+            
+            # PSAR bilgileri
+            if 'PSAR' in row_data:
+                details.append(f"PSAR: {row_data['PSAR']:.6f}")
+            
+            # ATR Zone bilgileri
+            if 'ATR' in row_data:
+                details.append(f"ATR: {row_data['ATR']:.6f}")
+            if 'Upper_Zone' in row_data:
+                details.append(f"Upper Zone: {row_data['Upper_Zone']:.6f}")
+            if 'Lower_Zone' in row_data:
+                details.append(f"Lower Zone: {row_data['Lower_Zone']:.6f}")
+            
+            # Donchian Channel bilgileri
+            if 'Donchian_Upper' in row_data:
+                details.append(f"Donchian Upper: {row_data['Donchian_Upper']:.6f}")
+            if 'Donchian_Lower' in row_data:
+                details.append(f"Donchian Lower: {row_data['Donchian_Lower']:.6f}")
+            if 'Donchian_Middle' in row_data:
+                details.append(f"Donchian Middle: {row_data['Donchian_Middle']:.6f}")
+            
+            # EMA bilgileri
+            if 'EMA_9' in row_data:
+                details.append(f"EMA_9: {row_data['EMA_9']:.6f}")
+            if 'EMA_27' in row_data:
+                details.append(f"EMA_27: {row_data['EMA_27']:.6f}")
+            if 'HMA_200' in row_data:
+                details.append(f"HMA_200: {row_data['HMA_200']:.6f}")
+            
+            # Trend bilgileri
+            if 'Trend' in row_data:
+                details.append(f"Trend: {row_data['Trend']}")
+            
+            # Zone bilgileri
+            if 'Zone' in row_data:
+                details.append(f"Zone: {row_data['Zone']}")
+            
+            # Sinyal durumu
+            details.append(f"Buy Signal: {row_data.get('buy', False)}")
+            details.append(f"Sell Signal: {row_data.get('sell', False)}")
+            
+            # Bekleme süresi
+            details.append(f"Waiting: {self.config.signal_confirmation_delay}s")
+            
+            return " | ".join(details)
+            
+        except Exception as e:
+            logging.error(f"Sinyal detayları hazırlanırken hata: {e}")
+            return f"{signal_type.upper()} signal detected, waiting for confirmation ({self.config.signal_confirmation_delay}s)"
 
     def _handle_pending_signal(self):
         """Bekleyen sinyali işler"""
