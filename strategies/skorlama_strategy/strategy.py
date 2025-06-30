@@ -16,7 +16,7 @@ Ana bileşenler:
 
 import pandas as pd
 import numpy as np
-import talib
+import ta
 from typing import Dict, Tuple, Optional
 from .config import SkorlamaConfig
 
@@ -53,8 +53,15 @@ class SkorlamaStrategy:
         psar_end = self.config.PSAR_END * 0.10      # 0.20
         psar_multiplier = self.config.PSAR_MULTIPLIER * 0.01  # 0.02
         
-        # TALib ile PSAR hesapla
-        psar = talib.SAR(high, low, acceleration=psar_start, maximum=psar_end)
+        # ta kütüphanesi ile PSAR hesapla
+        psar_indicator = ta.trend.PSARIndicator(
+            high=high, 
+            low=low, 
+            close=close,
+            step=psar_start,
+            max_step=psar_end
+        )
+        psar = psar_indicator.psar()
         
         # PSAR yukarı ve aşağı değerlerini ayır
         psar_up = pd.Series(index=close.index, dtype=float)
@@ -85,7 +92,13 @@ class SkorlamaStrategy:
         hl2 = (high + low) / 2
         
         # ATR hesapla
-        atr = talib.ATR(high, low, close, timeperiod=self.config.ATR_ZONE_LENGTH)
+        atr_indicator = ta.volatility.AverageTrueRange(
+            high=high, 
+            low=low, 
+            close=close, 
+            window=self.config.ATR_ZONE_LENGTH
+        )
+        atr = atr_indicator.average_true_range()
         
         # Down zone hesapla
         down_zone = hl2 + self.config.ATR_ZONE_MULTIPLIER * atr
@@ -131,9 +144,16 @@ class SkorlamaStrategy:
         Returns:
             Tuple[pd.Series, pd.Series, pd.Series]: Upper, Lower, Middle Donchian
         """
-        # Rolling window ile highest ve lowest hesapla
-        upper_donchian = high.rolling(window=self.config.DONCHIAN_LENGTH).max()
-        lower_donchian = low.rolling(window=self.config.DONCHIAN_LENGTH).min()
+        # ta kütüphanesi ile Donchian Channel hesapla
+        donchian_indicator = ta.volatility.DonchianChannel(
+            high=high, 
+            low=low, 
+            close=high,  # close parametresi gerekli ama kullanılmıyor
+            window=self.config.DONCHIAN_LENGTH
+        )
+        
+        upper_donchian = donchian_indicator.donchian_channel_hband()
+        lower_donchian = donchian_indicator.donchian_channel_lband()
         middle_donchian = (upper_donchian + lower_donchian) / 2
         
         return upper_donchian, lower_donchian, middle_donchian
@@ -148,14 +168,14 @@ class SkorlamaStrategy:
         Returns:
             Tuple[pd.Series, pd.Series]: EMA 50, EMA 200
         """
-        ema50 = talib.EMA(close, timeperiod=self.config.EMA_FAST)
-        ema200 = talib.EMA(close, timeperiod=self.config.EMA_SLOW)
+        ema50 = ta.trend.EMAIndicator(close=close, window=self.config.EMA_FAST).ema()
+        ema200 = ta.trend.EMAIndicator(close=close, window=self.config.EMA_SLOW).ema()
         
         return ema50, ema200
     
     def calculate_adx(self, high: pd.Series, low: pd.Series, close: pd.Series) -> Tuple[pd.Series, pd.Series, pd.Series]:
         """
-        ADX göstergesi hesaplama (manuel hesaplama - Pine Script'e uygun)
+        ADX göstergesi hesaplama
         
         Args:
             high: Yüksek fiyat serisi
@@ -165,40 +185,17 @@ class SkorlamaStrategy:
         Returns:
             Tuple[pd.Series, pd.Series, pd.Series]: ADX, Plus DI, Minus DI
         """
-        # Up move ve down move hesapla
-        up_move = high - high.shift(1)
-        down_move = low.shift(1) - low
+        # ta kütüphanesi ile ADX hesapla
+        adx_indicator = ta.trend.ADXIndicator(
+            high=high, 
+            low=low, 
+            close=close, 
+            window=self.config.ADX_LENGTH
+        )
         
-        # Plus DM ve Minus DM hesapla
-        plus_dm = pd.Series(0.0, index=close.index)
-        minus_dm = pd.Series(0.0, index=close.index)
-        
-        for i in range(1, len(close)):
-            if up_move.iloc[i] > 0 and up_move.iloc[i] > down_move.iloc[i]:
-                plus_dm.iloc[i] = up_move.iloc[i]
-            else:
-                plus_dm.iloc[i] = 0
-                
-            if down_move.iloc[i] > 0 and down_move.iloc[i] > up_move.iloc[i]:
-                minus_dm.iloc[i] = down_move.iloc[i]
-            else:
-                minus_dm.iloc[i] = 0
-        
-        # True Range hesapla
-        tr = talib.TRANGE(high, low, close)
-        
-        # RMA (Relative Moving Average) hesapla (EMA'ya benzer)
-        tr_rma = talib.EMA(tr, timeperiod=self.config.ADX_LENGTH)
-        plus_dm_rma = talib.EMA(plus_dm, timeperiod=self.config.ADX_LENGTH)
-        minus_dm_rma = talib.EMA(minus_dm, timeperiod=self.config.ADX_LENGTH)
-        
-        # Plus DI ve Minus DI hesapla
-        plus_di = 100 * plus_dm_rma / tr_rma
-        minus_di = 100 * minus_dm_rma / tr_rma
-        
-        # DX ve ADX hesapla
-        dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di)
-        adx = talib.EMA(dx, timeperiod=self.config.ADX_LENGTH)
+        adx = adx_indicator.adx()
+        plus_di = adx_indicator.adx_pos()
+        minus_di = adx_indicator.adx_neg()
         
         return adx, plus_di, minus_di
     
@@ -212,7 +209,7 @@ class SkorlamaStrategy:
         Returns:
             pd.Series: RSI değerleri
         """
-        return talib.RSI(close, timeperiod=self.config.RSI_LENGTH)
+        return ta.momentum.RSIIndicator(close=close, window=self.config.RSI_LENGTH).rsi()
     
     def calculate_volume_ma(self, volume: pd.Series) -> pd.Series:
         """
@@ -238,7 +235,13 @@ class SkorlamaStrategy:
         Returns:
             Tuple[pd.Series, pd.Series]: ATR değerleri, ATR MA
         """
-        atr = talib.ATR(high, low, close, timeperiod=self.config.ATR_LENGTH)
+        atr_indicator = ta.volatility.AverageTrueRange(
+            high=high, 
+            low=low, 
+            close=close, 
+            window=self.config.ATR_LENGTH
+        )
+        atr = atr_indicator.average_true_range()
         atr_ma = atr.rolling(window=self.config.ATR_MA_LENGTH).mean()
         
         return atr, atr_ma
