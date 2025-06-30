@@ -261,6 +261,23 @@ class SkorlamaBot:
                 # CSV'ye kaydet
                 self._log_trade(trade, signal)
                 
+                # Ortak sinyal kontrol CSV'ye yaz
+                try:
+                    from core.signal_logger import signal_logger
+                    # Signal data'yı hazırla
+                    signal_data = {
+                        'buy': True,
+                        'sell': False,
+                        'Close': trade['price'],
+                        'score': signal.get('score', 0),
+                        'adx': signal.get('adx', 0),
+                        'rsi': signal.get('rsi', 0),
+                        'bar_index': str(signal.get('time', datetime.now()))
+                    }
+                    signal_logger.log_signal("Skorlama_Strategy", self.symbol, signal_data)
+                except Exception as e:
+                    self.logger.error(f"Sinyal kontrol logger hatası: {e}")
+                
             elif signal['action'] == 'enter_short':
                 # Short pozisyon girişi
                 trade = signal['trade']
@@ -290,6 +307,23 @@ class SkorlamaBot:
                 
                 # CSV'ye kaydet
                 self._log_trade(trade, signal)
+                
+                # Ortak sinyal kontrol CSV'ye yaz
+                try:
+                    from core.signal_logger import signal_logger
+                    # Signal data'yı hazırla
+                    signal_data = {
+                        'buy': False,
+                        'sell': True,
+                        'Close': trade['price'],
+                        'score': signal.get('score', 0),
+                        'adx': signal.get('adx', 0),
+                        'rsi': signal.get('rsi', 0),
+                        'bar_index': str(signal.get('time', datetime.now()))
+                    }
+                    signal_logger.log_signal("Skorlama_Strategy", self.symbol, signal_data)
+                except Exception as e:
+                    self.logger.error(f"Sinyal kontrol logger hatası: {e}")
                 
             elif signal['action'] == 'exit':
                 # Pozisyon çıkışı

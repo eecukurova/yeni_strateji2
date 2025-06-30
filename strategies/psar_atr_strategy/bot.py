@@ -566,6 +566,13 @@ class Bot:
             signal_data=row_data
         )
         
+        # Ortak sinyal kontrol CSV'ye yaz
+        try:
+            from core.signal_logger import signal_logger
+            signal_logger.log_signal("PSAR_ATR_Strategy", self.symbol, row_data)
+        except Exception as e:
+            logging.error(f"Sinyal kontrol logger hatası: {e}")
+        
         logging.info(f"{signal_type.upper()} sinyali onay beklemesine alındı ({self.config.signal_confirmation_delay} saniye beklenecek)")
     
     def _prepare_signal_details(self, signal_type, row_data):
@@ -673,6 +680,15 @@ class Bot:
                     details=f"{self.pending_signal} signal confirmed after {elapsed_time:.1f}s",
                     signal_data=last_row
                 )
+                
+                # Ortak sinyal kontrol CSV'ye yaz (confirmed signal)
+                try:
+                    from core.signal_logger import signal_logger
+                    confirmed_data = last_row.copy()
+                    confirmed_data['confirmed'] = True
+                    signal_logger.log_signal("PSAR_ATR_Strategy", self.symbol, confirmed_data)
+                except Exception as e:
+                    logging.error(f"Sinyal kontrol logger hatası: {e}")
                 
                 # Aynı timeframe'de zaten işlem yapılıp yapılmadığını kontrol et
                 if self._is_same_candle_timeframe(current_time):

@@ -581,11 +581,20 @@ def view_logs(coin):
         available_files = [f for f in os.listdir(LOGS_PATH) if f.startswith('main_')]
         log_lines = [f'Log file not found. Available files: {available_files}']
     
+    # Signal control data - ortak dosya
+    signal_control_file = os.path.join(LOGS_PATH, 'sinyal_kontrol.csv')
+    signal_control_data = []
+    if os.path.exists(signal_control_file):
+        signal_control_data = read_csv_file(signal_control_file, max_rows=500)  # Show last 500 rows
+    else:
+        signal_control_data = [{'error': 'Signal control file not found. Signals will appear after first detection.'}]
+    
     return render_template('logs.html', 
                          coin=coin,
                          trades_data=trades_data,
                          positions_data=positions_data,
                          telegram_data=telegram_data,
+                         signal_control_data=signal_control_data,
                          log_lines=log_lines)
 
 @app.route('/api/process_status')
