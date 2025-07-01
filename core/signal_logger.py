@@ -2,6 +2,7 @@ import csv
 import os
 from datetime import datetime
 import logging
+import uuid
 
 class SignalLogger:
     """Tüm stratejiler için ortak sinyal kontrol CSV logger'ı"""
@@ -21,16 +22,68 @@ class SignalLogger:
                 with open(self.csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
                     writer = csv.writer(csvfile)
                     header = [
-                        'timestamp', 'strategy', 'symbol', 'bar_index', 'signal_type',
+                        'signal_id', 'timestamp', 'strategy', 'symbol', 'bar_index', 'signal_type',
                         'close', 'high', 'low', 'pSAR_UpValue', 'pSAR_DownValue',
                         'zoneATR', 'upZone', 'downZone', 'zoneDecider',
                         'greenZone', 'redZone', 'middleDonchian', 'upperDonchian',
-                        'lowerDonchian', 'emaLower', 'emaMedium', 'hmaLong'
+                        'lowerDonchian', 'emaLower', 'emaMedium', 'hmaLong',
+                        'position_opened', 'entry_price', 'exit_price', 'pnl_usdt', 'pnl_percent', 'position_closed_at'
                     ]
                     writer.writerow(header)
+            else:
+                # Mevcut dosyada yeni alanlar var mı kontrol et
+                self._check_and_update_headers()
                     
         except Exception as e:
             logging.error(f"Signal control CSV dosyası oluşturma hatası: {e}")
+    
+    def _check_and_update_headers(self):
+        """Mevcut CSV dosyasının header'ını kontrol et ve gerekirse güncelle"""
+        try:
+            # Mevcut header'ı oku
+            with open(self.csv_filename, 'r', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                existing_header = next(reader, [])
+            
+            # Yeni header
+            new_header = [
+                'signal_id', 'timestamp', 'strategy', 'symbol', 'bar_index', 'signal_type',
+                'close', 'high', 'low', 'pSAR_UpValue', 'pSAR_DownValue',
+                'zoneATR', 'upZone', 'downZone', 'zoneDecider',
+                'greenZone', 'redZone', 'middleDonchian', 'upperDonchian',
+                'lowerDonchian', 'emaLower', 'emaMedium', 'hmaLong',
+                'position_opened', 'entry_price', 'exit_price', 'pnl_usdt', 'pnl_percent', 'position_closed_at'
+            ]
+            
+            # Header farklıysa dosyayı güncelle
+            if existing_header != new_header:
+                # Mevcut verileri oku
+                with open(self.csv_filename, 'r', encoding='utf-8') as csvfile:
+                    reader = csv.reader(csvfile)
+                    next(reader)  # Header'ı atla
+                    existing_data = list(reader)
+                
+                # Dosyayı yeni header ile yeniden yaz
+                with open(self.csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(new_header)
+                    
+                    # Mevcut verileri yeni formata dönüştür
+                    for row in existing_data:
+                        # Eksik alanları boş string ile doldur
+                        while len(row) < len(new_header):
+                            row.append('')
+                        
+                        # signal_id yoksa oluştur
+                        if not row[0] or row[0] == 'timestamp':  # Eski format
+                            row.insert(0, str(uuid.uuid4())[:8])  # signal_id ekle
+                        
+                        writer.writerow(row)
+                
+                logging.info("Signal control CSV header güncellendi")
+                
+        except Exception as e:
+            logging.error(f"CSV header güncelleme hatası: {e}")
     
     def log_signal(self, strategy_name, symbol, signal_data):
         """
@@ -40,8 +93,14 @@ class SignalLogger:
             strategy_name (str): Strateji adı
             symbol (str): Trading sembolü
             signal_data (dict): Sinyal verileri
+            
+        Returns:
+            str: Signal ID
         """
         try:
+            # Unique signal ID oluştur
+            signal_id = str(uuid.uuid4())[:8]
+            
             # Timestamp
             timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
@@ -82,7 +141,7 @@ class SignalLogger:
             
             # CSV verisi hazırla
             csv_data = [
-                timestamp, strategy_name, symbol, bar_index, signal_type,
+                signal_id, timestamp, strategy_name, symbol, bar_index, signal_type,
                 f"{close:.4f}" if close else "",
                 f"{high:.4f}" if high else "",
                 f"{low:.4f}" if low else "",
@@ -99,7 +158,8 @@ class SignalLogger:
                 f"{lower_donchian:.4f}" if lower_donchian else "",
                 f"{ema_lower:.4f}" if ema_lower else "",
                 f"{ema_medium:.4f}" if ema_medium else "",
-                f"{hma_long:.4f}" if hma_long else ""
+                f"{hma_long:.4f}" if hma_long else "",
+                "", "", "", "", "", ""  # Pozisyon bilgileri boş
             ]
             
             # CSV'ye yaz
@@ -107,10 +167,80 @@ class SignalLogger:
                 writer = csv.writer(csvfile)
                 writer.writerow(csv_data)
             
-            logging.info(f"Sinyal kontrol CSV'ye kaydedildi: {strategy_name} - {symbol} - {signal_type}")
+            logging.info(f"Sinyal kontrol CSV'ye kaydedildi: {strategy_name} - {symbol} - {signal_type} - ID: {signal_id}")
+            
+            return signal_id
             
         except Exception as e:
             logging.error(f"Sinyal kontrol CSV kaydetme hatası: {e}")
+            return None
+    
+    def update_position_opened(self, signal_id, entry_price):
+        """Pozisyon açıldığında sinyal kaydını güncelle"""
+        try:
+            self._update_signal_record(signal_id, {
+                'position_opened': 'true',
+                'entry_price': f"{entry_price:.4f}" if entry_price else ""
+            })
+            logging.info(f"Signal {signal_id} pozisyon açılış bilgisi güncellendi: {entry_price}")
+        except Exception as e:
+            logging.error(f"Pozisyon açılış güncelleme hatası: {e}")
+    
+    def update_position_closed(self, signal_id, exit_price, pnl_usdt, pnl_percent):
+        """Pozisyon kapandığında kar/zarar bilgilerini güncelle"""
+        try:
+            close_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self._update_signal_record(signal_id, {
+                'exit_price': f"{exit_price:.4f}" if exit_price else "",
+                'pnl_usdt': f"{pnl_usdt:.4f}" if pnl_usdt else "",
+                'pnl_percent': f"{pnl_percent:.2f}%" if pnl_percent else "",
+                'position_closed_at': close_time
+            })
+            logging.info(f"Signal {signal_id} pozisyon kapanış bilgisi güncellendi: PnL USDT: {pnl_usdt}, PnL %: {pnl_percent}")
+        except Exception as e:
+            logging.error(f"Pozisyon kapanış güncelleme hatası: {e}")
+    
+    def _update_signal_record(self, signal_id, update_data):
+        """Belirli bir signal ID'ye sahip kaydı güncelle"""
+        try:
+            # Mevcut verileri oku
+            rows = []
+            header = []
+            
+            with open(self.csv_filename, 'r', encoding='utf-8') as csvfile:
+                reader = csv.reader(csvfile)
+                header = next(reader)
+                rows = list(reader)
+            
+            # Signal ID'yi bul ve güncelle
+            updated = False
+            for i, row in enumerate(rows):
+                if len(row) > 0 and row[0] == signal_id:
+                    # Güncelleme verilerini uygula
+                    for field, value in update_data.items():
+                        if field in header:
+                            field_index = header.index(field)
+                            if field_index < len(row):
+                                row[field_index] = value
+                            else:
+                                # Row eksik kolonlara sahipse, uzat
+                                while len(row) <= field_index:
+                                    row.append('')
+                                row[field_index] = value
+                    updated = True
+                    break
+            
+            if updated:
+                # Dosyayı güncelle
+                with open(self.csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.writer(csvfile)
+                    writer.writerow(header)
+                    writer.writerows(rows)
+            else:
+                logging.warning(f"Signal ID {signal_id} bulunamadı")
+                
+        except Exception as e:
+            logging.error(f"Signal record güncelleme hatası: {e}")
 
 # Global instance
 signal_logger = SignalLogger() 

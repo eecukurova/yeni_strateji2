@@ -15,6 +15,7 @@ from strategies.eralp_strateji2.strategy import Strategy
 from strategies.eralp_strateji2.config import Config
 from strategies.eralp_strateji2.executor import Executor
 from core.telegram.telegram_notifier import TelegramNotifier
+from core.signal_logger import signal_logger
 
 class Bot:
     def __init__(self, symbol, timeframe, leverage, trade_amount):
@@ -64,6 +65,10 @@ class Bot:
         self.pending_signal = None
         self.pending_signal_time = None
         self.pending_signal_data = None
+        
+        # Signal ID takibi için
+        self.current_signal_id = None
+        self.position_entry_price = None
 
     def _sync_ntp_time(self, is_periodic=False):
         """NTP sunucusu ile sistem saatini senkronize eder"""
@@ -461,6 +466,16 @@ class Bot:
                 take_profit=take_profit
         ):
             self.position = 1 if side == 'BUY' else -1
+            self.position_entry_price = self.entry_price
+            
+            # Signal logger'a pozisyon açıldığını bildir
+            if self.current_signal_id:
+                try:
+                    signal_logger.update_position_opened(self.current_signal_id, self.entry_price)
+                    logging.info(f"Signal {self.current_signal_id} için pozisyon açılış bilgisi güncellendi")
+                except Exception as e:
+                    logging.error(f"Signal logger pozisyon açılış güncelleme hatası: {e}")
+            
             logging.info(f"Başarılı {side} işlemi: Entry={self.entry_price}")
             return True
         else:
@@ -577,10 +592,10 @@ class Bot:
             signal_data=row_data
         )
         
-        # Ortak sinyal kontrol CSV'ye yaz
+        # Ortak sinyal kontrol CSV'ye yaz ve signal ID'yi kaydet
         try:
-            from core.signal_logger import signal_logger
-            signal_logger.log_signal("Eralp_Strategy_2", self.symbol, row_data)
+            self.current_signal_id = signal_logger.log_signal("Eralp_Strategy_2", self.symbol, row_data)
+            logging.info(f"Signal ID kaydedildi: {self.current_signal_id}")
         except Exception as e:
             logging.error(f"Sinyal kontrol logger hatası: {e}")
         
@@ -637,10 +652,7 @@ class Bot:
                 
                 # Ortak sinyal kontrol CSV'ye yaz (confirmed signal)
                 try:
-                    from core.signal_logger import signal_logger
-                    confirmed_data = last_row.copy()
-                    confirmed_data['confirmed'] = True
-                    signal_logger.log_signal("Eralp_Strategy_2", self.symbol, confirmed_data)
+                    signal_logger.log_signal("Eralp_Strategy_2", self.symbol, last_row)
                 except Exception as e:
                     logging.error(f"Sinyal kontrol logger hatası: {e}")
                 
@@ -744,6 +756,27 @@ class Bot:
                     price=current_price,
                     details=f"Entry: {self.entry_price:.4f}, Exit: {current_price:.4f}, P&L: {leveraged_pnl:+.2f}%, Status: {status}"
                 )
+                
+                # Signal logger'a kar/zarar bilgilerini bildir
+                if self.current_signal_id and self.position_entry_price:
+                    try:
+                        # USDT cinsinden kar/zarar hesapla (yaklaşık)
+                        pnl_usdt = (leveraged_pnl / 100) * self.trade_amount
+                        
+                        signal_logger.update_position_closed(
+                            self.current_signal_id,
+                            current_price,
+                            pnl_usdt,
+                            leveraged_pnl
+                        )
+                        logging.info(f"Signal {self.current_signal_id} için pozisyon kapanış bilgisi güncellendi")
+                        
+                        # Signal takibini temizle
+                        self.current_signal_id = None
+                        self.position_entry_price = None
+                        
+                    except Exception as e:
+                        logging.error(f"Signal logger pozisyon kapanış güncelleme hatası: {e}")
                 
                 message = f"""{emoji} <b>POZİSYON KAPANDI</b> {emoji}
 

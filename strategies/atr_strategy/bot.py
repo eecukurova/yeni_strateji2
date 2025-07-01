@@ -13,8 +13,10 @@ import pandas as pd
 from core.logging_config import LoggingConfig
 from adapters.binance.binance_client import BinanceClient
 from strategies.atr_strategy.strategy import Strategy
+from strategies.atr_strategy.config import Config
 from strategies.atr_strategy.executor import Executor
 from core.telegram.telegram_notifier import TelegramNotifier
+from core.signal_logger import signal_logger
 
 class Bot:
     def __init__(self, symbol, timeframe, leverage, trade_amount):
@@ -44,12 +46,15 @@ class Bot:
         """
 
         # Telegram bildirim servisi
-        self.telegram = TelegramNotifier()
+        self.telegram = TelegramNotifier(symbol=symbol)
+
+        # Config dosyasını yükle
+        self.config = Config()
 
         # Binance client ve diğer servislerin inizializasyonu
         self.client = BinanceClient(symbol, timeframe, leverage)
         self.strategy = Strategy(timeframe)
-        self.executor = Executor(self.client, symbol,trade_amount)
+        self.executor = Executor(self.client, symbol, trade_amount)
 
         # Durum değişkenleri
         self.position = 0  # 0: No Position, 1: Long, -1: Short
@@ -68,6 +73,10 @@ class Bot:
         # NTP senkronizasyon thread'i için
         self.ntp_sync_running = False
         self.ntp_thread = None
+
+        # Signal ID takibi için
+        self.current_signal_id = None
+        self.position_entry_price = None
 
     def _sync_ntp_time(self, is_periodic=False):
         """NTP sunucusu ile sistem saatini senkronize eder"""
@@ -464,6 +473,27 @@ class Bot:
                     details=f"Entry: {self.entry_price:.4f}, Exit: {current_price:.4f}, P&L: {leveraged_pnl:+.2f}%, Status: {status}"
                 )
                 
+                # Signal logger'a kar/zarar bilgilerini bildir
+                if self.current_signal_id and self.position_entry_price:
+                    try:
+                        # USDT cinsinden kar/zarar hesapla (yaklaşık)
+                        pnl_usdt = (leveraged_pnl / 100) * self.trade_amount
+                        
+                        signal_logger.update_position_closed(
+                            self.current_signal_id,
+                            current_price,
+                            pnl_usdt,
+                            leveraged_pnl
+                        )
+                        logging.info(f"Signal {self.current_signal_id} için pozisyon kapanış bilgisi güncellendi")
+                        
+                        # Signal takibini temizle
+                        self.current_signal_id = None
+                        self.position_entry_price = None
+                        
+                    except Exception as e:
+                        logging.error(f"Signal logger pozisyon kapanış güncelleme hatası: {e}")
+                
                 message = f"""{emoji} <b>POZİSYON KAPANDI</b> {emoji}
 
 <b>Sembol:</b> {self.symbol}
@@ -577,6 +607,16 @@ class Bot:
                 take_profit=take_profit
         ):
             self.position = 1 if side == 'BUY' else -1
+            self.position_entry_price = self.entry_price
+            
+            # Signal logger'a pozisyon açıldığını bildir
+            if self.current_signal_id:
+                try:
+                    signal_logger.update_position_opened(self.current_signal_id, self.entry_price)
+                    logging.info(f"Signal {self.current_signal_id} için pozisyon açılış bilgisi güncellendi")
+                except Exception as e:
+                    logging.error(f"Signal logger pozisyon açılış güncelleme hatası: {e}")
+            
             logging.info(f"Başarılı {side} işlemi: Entry={self.entry_price}")
             return True
         else:
@@ -680,10 +720,6 @@ class Bot:
 
     def _set_pending_signal(self, signal_type, row_data, current_time):
         """Sinyali beklenmeye alır"""
-        # Config dosyasını import et
-        from .config import Config
-        config = Config()
-        
         self.pending_signal = signal_type
         self.pending_signal_time = current_time
         self.pending_signal_data = row_data.copy()
@@ -693,34 +729,30 @@ class Bot:
             action="SIGNAL_DETECTED",
             side=signal_type.upper(),
             price=row_data['Close'],
-            details=f"{signal_type} signal detected, waiting for confirmation ({config.signal_confirmation_delay}s)",
+            details=f"{signal_type} signal detected, waiting for confirmation ({self.config.signal_confirmation_delay}s)",
             signal_data=row_data
         )
         
-        # Ortak sinyal kontrol CSV'ye yaz
+        # Ortak sinyal kontrol CSV'ye yaz ve signal ID'yi kaydet
         try:
-            from core.signal_logger import signal_logger
-            signal_logger.log_signal("ATR_Strategy", self.symbol, row_data)
+            self.current_signal_id = signal_logger.log_signal("ATR_Strategy", self.symbol, row_data)
+            logging.info(f"Signal ID kaydedildi: {self.current_signal_id}")
         except Exception as e:
             logging.error(f"Sinyal kontrol logger hatası: {e}")
         
-        logging.info(f"{signal_type.upper()} sinyali onay beklemesine alındı ({config.signal_confirmation_delay} saniye beklenecek)")
+        logging.info(f"{signal_type.upper()} sinyali onay beklemesine alındı ({self.config.signal_confirmation_delay} saniye beklenecek)")
 
     def _handle_pending_signal(self):
         """Bekleyen sinyali işler"""
         if not self.pending_signal or not self.pending_signal_time:
             return
         
-        # Config dosyasını import et
-        from .config import Config
-        config = Config()
-            
         current_time = datetime.now()
         elapsed_time = (current_time - self.pending_signal_time).total_seconds()
         
         # Bekleme süresi henüz dolmadıysa bekle
-        if elapsed_time < config.signal_confirmation_delay:
-            remaining_time = config.signal_confirmation_delay - elapsed_time
+        if elapsed_time < self.config.signal_confirmation_delay:
+            remaining_time = self.config.signal_confirmation_delay - elapsed_time
             logging.debug(f"Sinyal onay bekleniyor... Kalan süre: {remaining_time:.1f} saniye")
             return
         
@@ -761,10 +793,7 @@ class Bot:
                 
                 # Ortak sinyal kontrol CSV'ye yaz (confirmed signal)
                 try:
-                    from core.signal_logger import signal_logger
-                    confirmed_data = last_row.copy()
-                    confirmed_data['confirmed'] = True
-                    signal_logger.log_signal("ATR_Strategy", self.symbol, confirmed_data)
+                    signal_logger.log_signal("ATR_Strategy", self.symbol, last_row)
                 except Exception as e:
                     logging.error(f"Sinyal kontrol logger hatası: {e}")
                 

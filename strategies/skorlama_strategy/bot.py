@@ -13,14 +13,19 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 import os
 import csv
+import platform
+import ntplib
+import socket
+import threading
 
 from adapters.binance.binance_client import BinanceClient
 from adapters.binance.order_manager import OrderManager
 from core.telegram.telegram_notifier import TelegramNotifier
-from core.logging_config import setup_logging
+from core.logging_config import setup_logging, LoggingConfig
 from .strategy import SkorlamaStrategy
 from .executor import SkorlamaExecutor
 from .config import SkorlamaConfig
+from core.signal_logger import signal_logger
 
 class SkorlamaBot:
     """Skorlama Stratejisi Bot Sınıfı"""
@@ -38,12 +43,22 @@ class SkorlamaBot:
             leverage: Kaldıraç oranı
             trade_amount: İşlem miktarı (yüzde)
         """
+        # NTP senkronizasyonunu en başta yap
+        self._sync_ntp_time()
+
+        # Windows sisteminde zamanı senkronize et
+        if platform.system() == 'Windows':
+            os.system('w32tm /resync')
+        self.logging_config = LoggingConfig()
+
+        # Logging ayarları - Yeni dosya tabanlı sistem
+        self.logger = self.logging_config.setup_logging(f'skorlama_bot_{symbol.lower()}')
+        self.logger.info(f"🚀 Skorlama Strategy Bot başlatılıyor... - Sembol: {symbol}, Kaldıraç: {leverage}x, İşlem Miktarı: %{trade_amount}")
+        
+        # Konfigürasyon ayarları
         self.symbol = symbol.upper()
         self.leverage = leverage
         self.trade_amount = trade_amount
-        
-        # Logging ayarla
-        self.logger = setup_logging(f'skorlama_bot_{self.symbol.lower()}')
         
         # Binance client başlat
         self.client = BinanceClient(api_key, api_secret, testnet)
@@ -68,7 +83,26 @@ class SkorlamaBot:
         # CSV dosyalarını oluştur
         self._initialize_csv_files()
         
-        self.logger.info(f"Skorlama Bot başlatıldı - Sembol: {self.symbol}, Kaldıraç: {leverage}x, İşlem Miktarı: %{trade_amount}")
+        # Durum değişkenleri
+        self.position = 0  # 0: No Position, 1: Long, -1: Short
+        self.entry_price = 0.0
+        self.last_check_time = time.time()
+        
+        # Timeframe kontrolü için yeni değişkenler
+        self.last_trade_candle_start = None  # Son işlem yapılan mumun başlangıç zamanı
+        
+        # NTP senkronizasyon thread'i için
+        self.ntp_sync_running = False
+        self.ntp_thread = None
+
+        # Sinyal onay sistemi için değişkenler
+        self.pending_signal = None
+        self.pending_signal_time = None
+        self.pending_signal_data = None
+        
+        # Signal ID takibi için
+        self.current_signal_id = None
+        self.position_entry_price = None
     
     def _initialize_csv_files(self):
         """CSV dosyalarını başlatma"""
@@ -244,6 +278,15 @@ class SkorlamaBot:
                 )
                 
                 if order_result:
+                    # Signal logger'a pozisyon açıldığını bildir
+                    if self.current_signal_id:
+                        try:
+                            signal_logger.update_position_opened(self.current_signal_id, trade['price'])
+                            self.position_entry_price = trade['price']
+                            self.logger.info(f"Signal {self.current_signal_id} için pozisyon açılış bilgisi güncellendi")
+                        except Exception as e:
+                            self.logger.error(f"Signal logger pozisyon açılış güncelleme hatası: {e}")
+                    
                     message = f"🟢 LONG POZİSYON AÇILDI\n"
                     message += f"Sembol: {self.symbol}\n"
                     message += f"Fiyat: {trade['price']:.6f}\n"
@@ -263,7 +306,6 @@ class SkorlamaBot:
                 
                 # Ortak sinyal kontrol CSV'ye yaz
                 try:
-                    from core.signal_logger import signal_logger
                     # Signal data'yı hazırla
                     signal_data = {
                         'buy': True,
@@ -274,7 +316,8 @@ class SkorlamaBot:
                         'rsi': signal.get('rsi', 0),
                         'bar_index': str(signal.get('time', datetime.now()))
                     }
-                    signal_logger.log_signal("Skorlama_Strategy", self.symbol, signal_data)
+                    self.current_signal_id = signal_logger.log_signal("Skorlama_Strategy", self.symbol, signal_data)
+                    self.logger.info(f"Signal ID kaydedildi: {self.current_signal_id}")
                 except Exception as e:
                     self.logger.error(f"Sinyal kontrol logger hatası: {e}")
                 
@@ -291,6 +334,15 @@ class SkorlamaBot:
                 )
                 
                 if order_result:
+                    # Signal logger'a pozisyon açıldığını bildir
+                    if self.current_signal_id:
+                        try:
+                            signal_logger.update_position_opened(self.current_signal_id, trade['price'])
+                            self.position_entry_price = trade['price']
+                            self.logger.info(f"Signal {self.current_signal_id} için pozisyon açılış bilgisi güncellendi")
+                        except Exception as e:
+                            self.logger.error(f"Signal logger pozisyon açılış güncelleme hatası: {e}")
+                    
                     message = f"🔴 SHORT POZİSYON AÇILDI\n"
                     message += f"Sembol: {self.symbol}\n"
                     message += f"Fiyat: {trade['price']:.6f}\n"
@@ -310,7 +362,6 @@ class SkorlamaBot:
                 
                 # Ortak sinyal kontrol CSV'ye yaz
                 try:
-                    from core.signal_logger import signal_logger
                     # Signal data'yı hazırla
                     signal_data = {
                         'buy': False,
@@ -321,7 +372,8 @@ class SkorlamaBot:
                         'rsi': signal.get('rsi', 0),
                         'bar_index': str(signal.get('time', datetime.now()))
                     }
-                    signal_logger.log_signal("Skorlama_Strategy", self.symbol, signal_data)
+                    self.current_signal_id = signal_logger.log_signal("Skorlama_Strategy", self.symbol, signal_data)
+                    self.logger.info(f"Signal ID kaydedildi: {self.current_signal_id}")
                 except Exception as e:
                     self.logger.error(f"Sinyal kontrol logger hatası: {e}")
                 
@@ -339,6 +391,28 @@ class SkorlamaBot:
                 )
                 
                 if order_result:
+                    # Signal logger'a kar/zarar bilgilerini bildir
+                    if self.current_signal_id and self.position_entry_price:
+                        try:
+                            # USDT cinsinden kar/zarar hesapla (yaklaşık)
+                            leveraged_pnl = trade['pnl_percent'] * self.leverage
+                            pnl_usdt = (leveraged_pnl / 100) * self.trade_amount
+                            
+                            signal_logger.update_position_closed(
+                                self.current_signal_id,
+                                trade['exit_price'],
+                                pnl_usdt,
+                                leveraged_pnl
+                            )
+                            self.logger.info(f"Signal {self.current_signal_id} için pozisyon kapanış bilgisi güncellendi")
+                            
+                            # Signal takibini temizle
+                            self.current_signal_id = None
+                            self.position_entry_price = None
+                            
+                        except Exception as e:
+                            self.logger.error(f"Signal logger pozisyon kapanış güncelleme hatası: {e}")
+                    
                     pnl_emoji = "🟢" if trade['pnl_percent'] > 0 else "🔴"
                     message = f"{pnl_emoji} POZİSYON KAPANDI\n"
                     message += f"Sembol: {self.symbol}\n"
@@ -439,4 +513,55 @@ class SkorlamaBot:
     def stop(self):
         """Bot durdurma"""
         self.is_running = False
+        self.logger.info("Bot durdurma sinyali gönderildi")
+
+    def _sync_ntp_time(self):
+        """NTP zamanını senkronize etme"""
+        try:
+            ntp_client = ntplib.NTPClient()
+            response = ntp_client.request('pool.ntp.org')
+            if response:
+                ntp_time = datetime.fromtimestamp(response.tx_time)
+                os.environ['TZ'] = ntp_time.strftime('%Z')
+                time.tzset()
+                self.logger.info("NTP zamanı senkronize edildi")
+            else:
+                self.logger.warning("NTP zamanı alınamadı")
+        except Exception as e:
+            self.logger.error(f"NTP zamanı senkronize etme hatası: {e}")
+
+    def _sync_time(self):
+        """Zamanı senkronize etme"""
+        try:
+            # Bu metodun içeriği, platforma özel olarak doldurulmalıdır.
+            # Örneğin, Windows için 'w32tm /resync' komutunu çalıştırabilirsiniz.
+            # Bu örnekte, zamanının doğru şekilde senkronize edilip edilmediğini kontrol etmek için
+            # bir komut çalıştırılmıştır.
+            os.system('w32tm /resync')
+            self.logger.info("Zamanınını senkronize edildi")
+        except Exception as e:
+            self.logger.error(f"Zamanını senkronize etme hatası: {e}")
+
+    def _sync_time_thread(self):
+        """Zamanı senkronize etmek için thread"""
+        while self.ntp_sync_running:
+            self._sync_time()
+            time.sleep(60)  # 1 dakika bekleyin
+
+    def start_ntp_sync(self):
+        """NTP zamanını senkronize etmek için thread başlat"""
+        if not self.ntp_sync_running:
+            self.ntp_sync_running = True
+            self.ntp_thread = threading.Thread(target=self._sync_time_thread)
+            self.ntp_thread.start()
+
+    def stop_ntp_sync(self):
+        """NTP zamanını senkronize etmek için thread durdur"""
+        self.ntp_sync_running = False
+        if self.ntp_thread:
+            self.ntp_thread.join()
+
+    def start_signal_confirmation(self, signal: Dict):
+        """Sinyal onayı için bekleme"""
+        self.pending_signal = signal
         self.logger.info("Bot durdurma sinyali gönderildi") 
