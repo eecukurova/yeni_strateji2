@@ -13,4 +13,4 @@ class Config:
         self.leverage = 10  # Varsayılan kaldıraç oranı
         
         # Sinyal onay parametreleri
-        self.signal_confirmation_delay = 30  # Sinyal onay bekleme süresi (saniye)
+        self.signal_confirmation_delay = 121  # Sinyal onay bekleme süresi (saniye)

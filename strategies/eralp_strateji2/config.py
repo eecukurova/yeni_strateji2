@@ -24,7 +24,7 @@ class Config:
         self.waiting_period = 2 * 60  # 2 dakika (saniye cinsinden)
         
         # Sinyal onay parametreleri
-        self.signal_confirmation_delay = 30  # Sinyal onay bekleme süresi (saniye)
+        self.signal_confirmation_delay = 121  # Sinyal onay bekleme süresi (saniye)
         
         # Market condition filtreleri
         self.min_atr = 10  # Minimum ATR değeri

@@ -24,4 +24,4 @@ class Config:
         self.waiting_period = 2 * 60  # 2 dakika (saniye cinsinden)
         
         # Sinyal onay parametreleri
-        self.signal_confirmation_delay = 60  # Sinyal onay bekleme süresi (saniye) 
+        self.signal_confirmation_delay = 121  # Sinyal onay bekleme süresi (saniye) 
