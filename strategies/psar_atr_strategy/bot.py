@@ -69,6 +69,12 @@ class Bot:
         # Signal ID takibi için
         self.current_signal_id = None
         self.position_entry_price = None
+        
+        # Pozisyon doğrulama sistemi için
+        self.position_validation_pending = False
+        self.position_opened_candle_time = None
+        self.position_side = None  # 'BUY' or 'SELL'
+        self.position_signal_type = None  # 'buy' or 'sell'
 
     def _sync_ntp_time(self, is_periodic=False):
         """NTP sunucusu ile sistem saatini senkronize eder"""
@@ -453,6 +459,14 @@ class Bot:
         ):
             self.position = 1 if side == 'BUY' else -1
             self.position_entry_price = self.entry_price
+            
+            # Pozisyon doğrulama sistemini başlat
+            self.position_validation_pending = True
+            self.position_opened_candle_time = self._get_candle_start_time(datetime.now())
+            self.position_side = side
+            self.position_signal_type = signal_type
+            
+            logging.info(f"Pozisyon doğrulama sistemi aktif edildi. Bir sonraki mumda sinyal kontrol edilecek.")
             
             # Signal logger'a pozisyon açıldığını bildir
             if self.current_signal_id:

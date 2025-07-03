@@ -69,6 +69,12 @@ class Bot:
         # Signal ID takibi için
         self.current_signal_id = None
         self.position_entry_price = None
+        
+        # Pozisyon doğrulama sistemi için
+        self.position_validation_pending = False
+        self.position_opened_candle_time = None
+        self.position_side = None  # 'BUY' or 'SELL'
+        self.position_signal_type = None  # 'buy' or 'sell'
 
     def _sync_ntp_time(self, is_periodic=False):
         """NTP sunucusu ile sistem saatini senkronize eder"""
@@ -468,6 +474,14 @@ class Bot:
             self.position = 1 if side == 'BUY' else -1
             self.position_entry_price = self.entry_price
             
+            # Pozisyon doğrulama sistemini başlat
+            self.position_validation_pending = True
+            self.position_opened_candle_time = self._get_candle_start_time(datetime.now())
+            self.position_side = side
+            self.position_signal_type = signal_type
+            
+            logging.info(f"Pozisyon doğrulama sistemi aktif edildi. Bir sonraki mumda sinyal kontrol edilecek.")
+            
             # Signal logger'a pozisyon açıldığını bildir
             if self.current_signal_id:
                 try:
@@ -491,12 +505,17 @@ class Bot:
         - Otomatik işlem yönetimi
         """
         try:
-            # 1. Bekleyen sinyal kontrolü
+            # 1. Pozisyon doğrulama kontrolü (en öncelikli)
+            if self.position_validation_pending:
+                self._validate_position_signal()
+                return
+
+            # 2. Bekleyen sinyal kontrolü
             if self.pending_signal:
                 self._handle_pending_signal()
                 return
 
-            # 2. Pozisyon senkronizasyonu ve kontrol
+            # 3. Pozisyon senkronizasyonu ve kontrol
             try:
                 current_position = self.check_and_sync_position()
             except Exception as sync_error:
@@ -504,7 +523,7 @@ class Bot:
                 self.telegram.send_notification(f"⚠️ Pozisyon senkronizasyon hatası: {str(sync_error)}")
                 return
 
-            # 3. Aktif pozisyon varsa TP/SL kontrolü
+            # 4. Aktif pozisyon varsa TP/SL kontrolü
             if current_position != 0:
                 try:
                     # Pozisyon durumunu kontrol et
@@ -527,7 +546,7 @@ class Bot:
                     self.telegram.send_notification(f"⚠️ Pozisyon izleme hatası: {str(monitor_error)}")
                     return
 
-            # 4. Pozisyon yoksa sinyal kontrolü
+            # 5. Pozisyon yoksa sinyal kontrolü
             try:
                 # Güncel veriyi çek
                 df = self.client.fetch_data()
@@ -541,7 +560,7 @@ class Bot:
                 df = self.strategy.determine_position(df)
                 last_row = df.iloc[-1]
 
-                # 5. Yeni sinyal kontrolü
+                # 6. Yeni sinyal kontrolü
                 if last_row['buy']:
                     logging.info("Buy sinyali algılandı")
                     
@@ -693,6 +712,190 @@ class Bot:
         self.pending_signal = None
         self.pending_signal_time = None
         self.pending_signal_data = None
+    
+    def _cancel_position(self, reason="Signal validation failed"):
+        """Pozisyonu iptal eder ve emirleri kapatır"""
+        try:
+            logging.info(f"Pozisyon iptal ediliyor. Sebep: {reason}")
+            
+            # Mevcut fiyatı al
+            current_price = float(self.client.client.futures_symbol_ticker(symbol=self.symbol)['price'])
+            current_time = datetime.now()
+            
+            # Tüm açık emirleri iptal et
+            try:
+                self.client.client.futures_cancel_all_open_orders(symbol=self.symbol)
+                logging.info("Tüm açık emirler iptal edildi")
+            except Exception as e:
+                logging.error(f"Emir iptal etme hatası: {e}")
+            
+            # Pozisyon kapatma emri ver
+            try:
+                if self.position == 1:  # Long pozisyon
+                    close_side = 'SELL'
+                else:  # Short pozisyon
+                    close_side = 'BUY'
+                
+                # Pozisyon büyüklüğünü al
+                position_info = self.client.client.futures_position_information(symbol=self.symbol)
+                position_amount = 0
+                for pos in position_info:
+                    if pos['symbol'] == self.symbol:
+                        position_amount = abs(float(pos['positionAmt']))
+                        break
+                
+                if position_amount > 0:
+                    # Market emri ile pozisyonu kapat
+                    close_order = self.client.client.futures_create_order(
+                        symbol=self.symbol,
+                        side=close_side,
+                        type='MARKET',
+                        quantity=position_amount
+                    )
+                    logging.info(f"Pozisyon kapatma emri gönderildi: {close_order}")
+                
+            except Exception as e:
+                logging.error(f"Pozisyon kapatma hatası: {e}")
+            
+            # Kar/zarar hesapla
+            if self.position_entry_price and self.position_entry_price > 0:
+                if self.position == 1:  # Long pozisyon
+                    pnl_percent = ((current_price - self.position_entry_price) / self.position_entry_price) * 100
+                else:  # Short pozisyon
+                    pnl_percent = ((self.position_entry_price - current_price) / self.position_entry_price) * 100
+                
+                # Kaldıraçlı kar/zarar
+                leveraged_pnl = pnl_percent * self.leverage
+                position_type = "LONG" if self.position == 1 else "SHORT"
+                
+                # Trade aktivitesi log kaydı
+                self._log_trade_activity_to_csv(
+                    action="POSITION_CANCELED",
+                    side=position_type,
+                    quantity=0,
+                    price=current_price,
+                    details=f"Entry: {self.position_entry_price:.4f}, Exit: {current_price:.4f}, P&L: {leveraged_pnl:+.2f}%, Reason: {reason}"
+                )
+                
+                # Pozisyon CSV log kaydı
+                self._log_position_close_to_csv(
+                    timestamp=current_time,
+                    symbol=self.symbol,
+                    position_type=position_type,
+                    entry_price=self.position_entry_price,
+                    exit_price=current_price,
+                    price_change_percent=pnl_percent,
+                    leveraged_pnl_percent=leveraged_pnl,
+                    status="POSITION_CANCELED"
+                )
+                
+                # Signal logger'a pozisyon iptal bilgisini bildir
+                if self.current_signal_id:
+                    try:
+                        # USDT cinsinden kar/zarar hesapla (yaklaşık)
+                        pnl_usdt = (leveraged_pnl / 100) * self.trade_amount
+                        
+                        signal_logger.update_position_closed(
+                            self.current_signal_id,
+                            current_price,
+                            pnl_usdt,
+                            leveraged_pnl
+                        )
+                        logging.info(f"Signal {self.current_signal_id} için pozisyon iptal bilgisi güncellendi")
+                        
+                    except Exception as e:
+                        logging.error(f"Signal logger pozisyon iptal güncelleme hatası: {e}")
+                
+                # Telegram bildirimi
+                emoji = "🔄"
+                message = f"""{emoji} <b>POZİSYON İPTAL EDİLDİ</b> {emoji}
+
+<b>Sembol:</b> {self.symbol}
+<b>Pozisyon:</b> {position_type}
+<b>Giriş Fiyatı:</b> {self.position_entry_price:.4f}
+<b>İptal Fiyatı:</b> {current_price:.4f}
+<b>Fiyat Değişimi:</b> {pnl_percent:+.2f}%
+<b>Kaldıraçlı P&L:</b> {leveraged_pnl:+.2f}%
+<b>Sebep:</b> {reason}
+
+⏰ {current_time.strftime('%d.%m.%Y %H:%M')}"""
+                
+                self.telegram.send_notification(message)
+                logging.info(f"Pozisyon iptal bildirimi gönderildi: {reason}")
+                
+            else:
+                # Entry price bilinmiyorsa basit log
+                self._log_trade_activity_to_csv(
+                    action="POSITION_CANCELED",
+                    details=f"Position canceled - {reason}"
+                )
+                self.telegram.send_notification(f"🔄 Pozisyon iptal edildi: {reason}")
+            
+            # Pozisyon değişkenlerini sıfırla
+            self.position = 0
+            self.position_entry_price = None
+            self.entry_price = 0.0
+            self.position_validation_pending = False
+            self.position_opened_candle_time = None
+            self.position_side = None
+            self.position_signal_type = None
+            self.current_signal_id = None
+            
+            logging.info("Pozisyon iptal işlemi tamamlandı")
+            
+        except Exception as e:
+            logging.error(f"Pozisyon iptal etme genel hatası: {e}")
+            self.telegram.send_notification(f"⚠️ Pozisyon iptal etme hatası: {str(e)}")
+    
+    def _validate_position_signal(self):
+        """Pozisyon açıldıktan sonra bir sonraki mumda sinyali doğrular"""
+        try:
+            if not self.position_validation_pending:
+                return
+            
+            # Mevcut mum zamanını al
+            current_candle_time = self._get_candle_start_time(datetime.now())
+            
+            # Henüz yeni mum başlamamışsa bekle
+            if current_candle_time <= self.position_opened_candle_time:
+                logging.debug("Henüz yeni mum başlamadı, pozisyon doğrulama bekleniyor...")
+                return
+            
+            logging.info("Yeni mum başladı, pozisyon sinyali doğrulanıyor...")
+            
+            # Güncel veriyi çek
+            df = self.client.fetch_data()
+            if df is None or df.empty:
+                logging.warning("Pozisyon doğrulama için veri çekilemedi")
+                return
+            
+            # Stratejiye göre pozisyon belirleme
+            df = self.strategy.determine_position(df)
+            last_row = df.iloc[-1]
+            
+            # Sinyal hala geçerli mi kontrol et
+            signal_still_valid = False
+            
+            if self.position_signal_type == 'buy' and last_row['buy']:
+                signal_still_valid = True
+                logging.info("BUY sinyali hala geçerli")
+            elif self.position_signal_type == 'sell' and last_row['sell']:
+                signal_still_valid = True
+                logging.info("SELL sinyali hala geçerli")
+            
+            if not signal_still_valid:
+                logging.warning(f"{self.position_signal_type.upper()} sinyali artık geçerli değil, pozisyon iptal ediliyor")
+                self._cancel_position("Next candle signal validation failed")
+            else:
+                logging.info("Pozisyon sinyali doğrulandı, pozisyon devam ediyor")
+                # Doğrulama tamamlandı
+                self.position_validation_pending = False
+                self.position_opened_candle_time = None
+                
+        except Exception as e:
+            logging.error(f"Pozisyon sinyal doğrulama hatası: {e}")
+            # Hata durumunda pozisyonu iptal etmeyelim, sadece doğrulamayı durduralım
+            self.position_validation_pending = False
 
     def check_and_sync_position(self):
         """Pozisyon durumunu kontrol eder ve senkronize eder"""
